@@ -28,14 +28,16 @@ type Strategy = {
 };
 
 const initialWatchlist: WatchItem[] = [
+  { code: "601939", name: "建设银行", price: 8.97, change: 0.56, signal: "持有" },
+];
+
+const candidates: WatchItem[] = [
+  { code: "601939", name: "建设银行", price: 8.97, change: 0.56, signal: "持有" },
   { code: "600519", name: "贵州茅台", price: 1497.6, change: 1.82, signal: "突破" },
   { code: "300750", name: "宁德时代", price: 268.4, change: -0.76, signal: "观察" },
   { code: "300308", name: "中际旭创", price: 157.2, change: 3.41, signal: "持有" },
   { code: "600036", name: "招商银行", price: 43.18, change: 0.54, signal: "买入" },
   { code: "603259", name: "药明康德", price: 79.21, change: -1.13, signal: "减仓" },
-];
-
-const candidates: WatchItem[] = [
   { code: "601318", name: "中国平安", price: 58.42, change: 0.93, signal: "观察" },
   { code: "000858", name: "五粮液", price: 128.66, change: 1.26, signal: "突破" },
   { code: "002594", name: "比亚迪", price: 118.73, change: -0.38, signal: "观察" },
@@ -78,16 +80,10 @@ const strategies: Strategy[] = [
   },
 ];
 
-const positions = [
-  { name: "贵州茅台", code: "600519", shares: "200 股", cost: "1,462.80", price: "1,497.60", pnl: "+6,960.00", rate: "+2.38%" },
-  { name: "中际旭创", code: "300308", shares: "800 股", cost: "148.35", price: "157.20", pnl: "+7,080.00", rate: "+5.97%" },
-  { name: "招商银行", code: "600036", shares: "2,000 股", cost: "41.96", price: "43.18", pnl: "+2,440.00", rate: "+2.91%" },
-];
-
 const activity = [
-  { time: "14:42:16", action: "买入", stock: "招商银行", detail: "43.06 × 500", reason: "MA5 上穿 MA20" },
-  { time: "13:18:04", action: "卖出", stock: "宁德时代", detail: "269.10 × 300", reason: "触发 8% 移动止盈" },
-  { time: "10:06:38", action: "买入", stock: "中际旭创", detail: "155.80 × 200", reason: "放量突破 20 日高点" },
+  { time: "14:42:16", action: "买入", stock: "建设银行", detail: "8.94 × 8,000", reason: "放量突破 20 日高点" },
+  { time: "13:18:04", action: "卖出", stock: "建设银行", detail: "8.86 × 3,000", reason: "触发移动止盈" },
+  { time: "10:06:38", action: "买入", stock: "建设银行", detail: "8.72 × 5,000", reason: "MA5 上穿 MA20" },
 ];
 
 const equitySeries: Record<string, number[]> = {
@@ -95,6 +91,30 @@ const equitySeries: Record<string, number[]> = {
   ma: [0, 0.6, 0.2, 1.5, 2.4, 2.1, 3.8, 4.6, 4.1, 6.2, 7.8, 7.1, 8.7, 9.8, 9.4, 11.2, 10.7, 12.8, 13.6, 14.73],
   dividend: [0, 0.3, 0.8, 1.1, 1.7, 2.2, 2.6, 2.4, 3.7, 4.2, 4.9, 5.1, 5.8, 6.7, 7.1, 8.3, 8.9, 9.5, 10.2, 11.28],
   rsi: [0, 1.8, 0.4, 2.9, 1.7, 4.2, 3.1, 5.8, 4.6, 6.9, 5.2, 8.1, 7.4, 9.8, 8.6, 11.3, 9.7, 12.1, 11.2, 12.91],
+};
+
+const tradeMarkers: Record<string, { index: number; action: "buy" | "sell"; date: string }[]> = {
+  breakout: [
+    { index: 4, action: "buy", date: "03-12" },
+    { index: 10, action: "sell", date: "04-26" },
+    { index: 13, action: "buy", date: "05-08" },
+  ],
+  ma: [
+    { index: 3, action: "buy", date: "03-04" },
+    { index: 11, action: "sell", date: "04-28" },
+    { index: 15, action: "buy", date: "05-22" },
+  ],
+  dividend: [
+    { index: 2, action: "buy", date: "02-18" },
+    { index: 12, action: "sell", date: "05-06" },
+    { index: 14, action: "buy", date: "05-16" },
+  ],
+  rsi: [
+    { index: 3, action: "buy", date: "03-04" },
+    { index: 7, action: "sell", date: "03-28" },
+    { index: 12, action: "buy", date: "05-06" },
+    { index: 16, action: "sell", date: "05-30" },
+  ],
 };
 
 function EquityChart({ strategy, period }: { strategy: Strategy; period: string }) {
@@ -181,6 +201,37 @@ function EquityChart({ strategy, period }: { strategy: Strategy; period: string 
       });
       ctx.stroke();
 
+      tradeMarkers[strategy.id].forEach((marker) => {
+        const p = point(data[marker.index], marker.index);
+        const isBuy = marker.action === "buy";
+        const color = isBuy ? "#ff5b6e" : "#37d6aa";
+        const bubbleWidth = 62;
+        const bubbleHeight = 19;
+        const bubbleX = Math.max(pad.left, Math.min(width - pad.right - bubbleWidth, p.x - bubbleWidth / 2));
+        const bubbleY = Math.max(3, Math.min(height - pad.bottom - bubbleHeight - 3, p.y + (isBuy ? 19 : -37)));
+
+        ctx.strokeStyle = `${color}90`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x, isBuy ? bubbleY : bubbleY + bubbleHeight);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.roundRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight, 4);
+        ctx.fillStyle = `${color}e8`;
+        ctx.fill();
+        ctx.fillStyle = "#071018";
+        ctx.font = "600 9px ui-monospace, SFMono-Regular, Menlo, monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(`${isBuy ? "买入" : "卖出"} ${marker.date}`, bubbleX + bubbleWidth / 2, bubbleY + 13);
+        ctx.textAlign = "start";
+      });
+
       const last = point(data[data.length - 1], data.length - 1);
       ctx.beginPath();
       ctx.arc(last.x, last.y, 4.5, 0, Math.PI * 2);
@@ -220,7 +271,7 @@ function Metric({ label, value, tone = "default" }: { label: string; value: stri
 
 export default function Home() {
   const [watchlist, setWatchlist] = useState<WatchItem[]>(initialWatchlist);
-  const [selectedStock, setSelectedStock] = useState("600519");
+  const [selectedStock, setSelectedStock] = useState("601939");
   const [selectedStrategy, setSelectedStrategy] = useState(strategies[0]);
   const [period, setPeriod] = useState("近6月");
   const [search, setSearch] = useState("");
@@ -229,25 +280,33 @@ export default function Home() {
   const [stopLoss, setStopLoss] = useState(8);
   const [takeProfit, setTakeProfit] = useState(22);
   const [autoRebalance, setAutoRebalance] = useState(true);
+  const [initialCapital, setInitialCapital] = useState(1_000_000);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(100);
   const [runCount, setRunCount] = useState(12);
   const [toast, setToast] = useState("");
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("paper-alpha-watchlist");
+    const stored = window.localStorage.getItem("paper-alpha-watchlist-v2");
     if (stored) {
       try {
         setWatchlist(JSON.parse(stored));
       } catch {
-        window.localStorage.removeItem("paper-alpha-watchlist");
+        window.localStorage.removeItem("paper-alpha-watchlist-v2");
       }
     }
+
+    const storedCapital = Number(window.localStorage.getItem("paper-alpha-capital"));
+    if (storedCapital >= 100_000) setInitialCapital(storedCapital);
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem("paper-alpha-watchlist", JSON.stringify(watchlist));
+    window.localStorage.setItem("paper-alpha-watchlist-v2", JSON.stringify(watchlist));
   }, [watchlist]);
+
+  useEffect(() => {
+    window.localStorage.setItem("paper-alpha-capital", String(initialCapital));
+  }, [initialCapital]);
 
   useEffect(() => {
     if (!toast) return;
@@ -279,6 +338,24 @@ export default function Home() {
     return candidates.filter((item) => !watchlist.some((watch) => watch.code === item.code) && (!keyword || item.code.includes(keyword) || item.name.includes(keyword)));
   }, [search, watchlist]);
 
+  const totalReturnRate = Number(selectedStrategy.metrics.total.replace(/[+%]/g, ""));
+  const totalAsset = initialCapital * (1 + totalReturnRate / 100);
+  const positionRow = useMemo(() => {
+    const cost = 8.72;
+    const price = 8.97;
+    const shares = Math.max(100, Math.floor((initialCapital * (position / 100)) / (price * 100)) * 100);
+    const pnl = (price - cost) * shares;
+    return {
+      name: "建设银行",
+      code: "601939",
+      shares: `${shares.toLocaleString("zh-CN")} 股`,
+      cost: cost.toFixed(2),
+      price: price.toFixed(2),
+      pnl: `+${pnl.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      rate: `+${(((price - cost) / cost) * 100).toFixed(2)}%`,
+    };
+  }, [initialCapital, position]);
+
   const addStock = (stock: WatchItem) => {
     setWatchlist((items) => [...items, stock]);
     setSelectedStock(stock.code);
@@ -289,10 +366,9 @@ export default function Home() {
 
   const removeStock = (code: string) => {
     const stock = watchlist.find((item) => item.code === code);
-    setWatchlist((items) => items.filter((item) => item.code !== code));
-    if (selectedStock === code && watchlist.length > 1) {
-      setSelectedStock(watchlist.find((item) => item.code !== code)?.code ?? "");
-    }
+    const remaining = watchlist.filter((item) => item.code !== code);
+    setWatchlist(remaining);
+    if (selectedStock === code) setSelectedStock(remaining[0]?.code ?? "");
     setToast(`${stock?.name ?? "股票"}已移出自选`);
   };
 
@@ -314,7 +390,7 @@ export default function Home() {
         </div>
 
         <div className="market-strip" aria-label="市场概况">
-          <span><i className="live-dot" /> 模拟行情</span>
+          <span><i className="demo-dot" /> 演示行情 · 非实时</span>
           <b>上证 <em className="up">+0.68%</em></b>
           <b>深证 <em className="up">+1.12%</em></b>
           <b>创业板 <em className="down">-0.31%</em></b>
@@ -385,7 +461,7 @@ export default function Home() {
           </section>
 
           <section className="metrics-grid" aria-label="绩效指标">
-            <Metric label="模拟总资产" value={selectedStrategy.metrics.equity} />
+            <Metric label="模拟总资产" value={`¥ ${Math.round(totalAsset).toLocaleString("zh-CN")}`} />
             <Metric label="累计收益" value={selectedStrategy.metrics.total} tone="up" />
             <Metric label="最大回撤" value={selectedStrategy.metrics.drawdown} tone="down" />
             <Metric label="夏普比率" value={selectedStrategy.metrics.sharpe} />
@@ -397,17 +473,17 @@ export default function Home() {
                 <span className="eyebrow">PERFORMANCE</span>
                 <h2>策略净值</h2>
               </div>
-              <div className="legend"><span className="strategy-line" style={{ background: selectedStrategy.color }} />策略净值 <span className="benchmark-line" />沪深300</div>
+              <div className="legend"><span className="strategy-line" style={{ background: selectedStrategy.color }} />策略净值 <span className="benchmark-line" />沪深300 <i className="legend-buy">买</i><i className="legend-sell">卖</i></div>
               <div className="periods" role="group" aria-label="回测时间范围">
                 {["近1月", "近3月", "近6月", "今年"].map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}
               </div>
             </div>
             <div className="chart-canvas"><EquityChart strategy={selectedStrategy} period={period} /></div>
             <div className="chart-summary">
+              <div><span>模拟本金</span><b>¥ {initialCapital.toLocaleString("zh-CN")}</b></div>
               <div><span>年化收益</span><b className="up">{selectedStrategy.metrics.annual}</b></div>
               <div><span>胜率</span><b>{selectedStrategy.metrics.winRate}</b></div>
               <div><span>模拟交易</span><b>{selectedStrategy.metrics.trades} 笔</b></div>
-              <div><span>最近运行</span><b>今天 14:51</b></div>
             </div>
           </section>
 
@@ -415,7 +491,7 @@ export default function Home() {
             <div className="table-header">
               <div>
                 <span className="eyebrow">PORTFOLIO</span>
-                <h2>当前持仓 <small>3 / 5</small></h2>
+                <h2>当前持仓 <small>1 / 5</small></h2>
               </div>
               <button onClick={() => setToast("持仓明细已导出")}>导出明细 ↗</button>
             </div>
@@ -423,7 +499,7 @@ export default function Home() {
               <table>
                 <thead><tr><th>标的</th><th>持仓</th><th>成本价</th><th>现价</th><th>浮动盈亏</th><th>收益率</th></tr></thead>
                 <tbody>
-                  {positions.map((row) => (
+                  {[positionRow].map((row) => (
                     <tr key={row.code}><td><b>{row.name}</b><small>{row.code}</small></td><td>{row.shares}</td><td>{row.cost}</td><td>{row.price}</td><td className="up">{row.pnl}</td><td className="up">{row.rate}</td></tr>
                   ))}
                 </tbody>
@@ -446,6 +522,15 @@ export default function Home() {
                   <em>{strategy.tag}</em>
                 </button>
               ))}
+            </div>
+
+            <div className="capital-config">
+              <div className="section-label"><b>模拟账户资金</b><span>仅用于虚拟撮合</span></div>
+              <label htmlFor="initial-capital">初始本金</label>
+              <div className="capital-input"><i>¥</i><input id="initial-capital" type="number" min="100000" step="10000" value={initialCapital} onChange={(event) => setInitialCapital(Math.max(100_000, Number(event.target.value) || 100_000))} /></div>
+              <div className="capital-presets">
+                {[100_000, 500_000, 1_000_000, 5_000_000].map((amount) => <button key={amount} className={initialCapital === amount ? "active" : ""} onClick={() => setInitialCapital(amount)}>{amount >= 1_000_000 ? `${amount / 10_000}万` : `${amount / 10_000}万`}</button>)}
+              </div>
             </div>
 
             <div className="parameters">

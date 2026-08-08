@@ -135,6 +135,15 @@ input:focus-visible {
   width: 7px;
 }
 
+.demo-dot {
+  background: #f6b94a;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(246, 185, 74, .09);
+  display: inline-block;
+  height: 7px;
+  width: 7px;
+}
+
 .market-strip b {
   font-family: var(--font-geist-mono), monospace;
   font-size: 12px;
@@ -538,6 +547,22 @@ h2 small {
 .legend { color: var(--muted); font-size: 9px; }
 .strategy-line, .benchmark-line { display: inline-block; height: 2px; margin: 0 5px 3px 10px; width: 17px; }
 .benchmark-line { background: repeating-linear-gradient(90deg, #6c778a 0 3px, transparent 3px 5px); }
+.legend-buy,
+.legend-sell {
+  border-radius: 3px;
+  color: #071018;
+  display: inline-flex;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 700;
+  height: 15px;
+  justify-content: center;
+  line-height: 15px;
+  margin-left: 9px;
+  width: 15px;
+}
+.legend-buy { background: var(--red); }
+.legend-sell { background: var(--green); margin-left: 4px; }
 
 .periods {
   background: #090e15;
@@ -652,11 +677,75 @@ td small { color: #5f6d83; display: block; font-family: var(--font-geist-mono), 
 .strategy-card small { color: var(--muted); display: block; font-size: 8px; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .strategy-card em { background: #18202d; border-radius: 4px; color: #8e9aaf; font-size: 8px; font-style: normal; padding: 3px 5px; }
 
+.capital-config,
 .parameters,
 .execution-flow {
   border-top: 1px solid var(--border-soft);
   margin: 0 14px;
   padding: 14px 0;
+}
+
+.capital-config > label {
+  color: #8d9aaf;
+  display: block;
+  font-size: 9px;
+  margin: 12px 0 6px;
+}
+
+.capital-input {
+  align-items: center;
+  background: linear-gradient(135deg, #101a2a, #0b111b);
+  border: 1px solid #2a3d5e;
+  border-radius: 8px;
+  display: flex;
+  padding: 0 10px;
+}
+
+.capital-input i {
+  color: #78a9ff;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 14px;
+  font-style: normal;
+}
+
+.capital-input input {
+  appearance: textfield;
+  background: transparent;
+  border: 0;
+  color: #f3f6fb;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 16px;
+  font-weight: 650;
+  min-width: 0;
+  padding: 10px;
+  width: 100%;
+}
+
+.capital-input input::-webkit-inner-spin-button,
+.capital-input input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+
+.capital-presets {
+  display: grid;
+  gap: 5px;
+  grid-template-columns: repeat(4, 1fr);
+  margin-top: 7px;
+}
+
+.capital-presets button {
+  background: #0b111a;
+  border: 1px solid #202b3d;
+  border-radius: 5px;
+  color: #74829a;
+  cursor: pointer;
+  font-size: 8px;
+  padding: 6px 2px;
+}
+
+.capital-presets button:hover,
+.capital-presets button.active {
+  background: rgba(76, 141, 255, .13);
+  border-color: #35598f;
+  color: #8fb6ff;
 }
 
 .section-label {
