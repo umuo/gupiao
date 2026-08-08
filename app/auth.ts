@@ -7,7 +7,8 @@ export type AppUser = { userId: string; displayName: string; email: string; role
 
 const SESSION_COOKIE = "paper_alpha_session";
 const SESSION_SECONDS = 60 * 60 * 24 * 30;
-const PASSWORD_ITERATIONS = 210_000;
+// Cloudflare Workers WebCrypto accepts PBKDF2 iteration counts up to 100,000.
+const PASSWORD_ITERATIONS = 100_000;
 
 function bytesToHex(bytes: Uint8Array) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
