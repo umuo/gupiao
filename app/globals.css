@@ -558,7 +558,7 @@ h2 small {
 .legend { color: var(--muted); font-size: 9px; }
 .strategy-line, .benchmark-line { display: inline-block; height: 2px; margin: 0 5px 3px 10px; width: 17px; }
 .strategy-line { background: #f4f8ff; box-shadow: 0 0 6px rgba(142, 202, 255, .85); height: 3px; }
-.benchmark-line { background: repeating-linear-gradient(90deg, #f3c84b 0 4px, transparent 4px 6px); }
+.benchmark-line { background: #f3c84b; }
 .legend-buy,
 .legend-sell {
   border-radius: 3px;

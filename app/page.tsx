@@ -245,7 +245,7 @@ function runBacktest(bars: Kline[], strategy: Strategy["id"], initialCapital: nu
   };
 }
 
-function EquityChart({ result, strategy }: { result: BacktestResult; strategy: Strategy }) {
+function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -268,7 +268,7 @@ function EquityChart({ result, strategy }: { result: BacktestResult; strategy: S
       const height = rect.height;
       ctx.clearRect(0, 0, width, height);
 
-      if (!result.equityPercent.length) {
+      if (!result.equityPercent.length || !bars.length) {
         ctx.fillStyle = "#728098";
         ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
         ctx.textAlign = "center";
@@ -279,14 +279,16 @@ function EquityChart({ result, strategy }: { result: BacktestResult; strategy: S
       const pad = { top: 30, right: 20, bottom: 30, left: 48 };
       const chartW = width - pad.left - pad.right;
       const chartH = height - pad.top - pad.bottom;
-      const allValues = [...result.equityPercent, ...result.benchmarkPercent, 0];
+      const priceValues = bars.map((bar) => bar.close);
+      const ma20Values = bars.map((bar, index) => average(bars.slice(Math.max(0, index - 19), index + 1).map((item) => item.close)));
+      const allValues = [...priceValues, ...ma20Values];
       const rawMin = Math.min(...allValues);
       const rawMax = Math.max(...allValues);
-      const spread = Math.max(4, rawMax - rawMin);
-      const min = rawMin - spread * 0.12;
-      const max = rawMax + spread * 0.12;
+      const spread = Math.max(rawMax * .02, rawMax - rawMin);
+      const min = rawMin - spread * 0.1;
+      const max = rawMax + spread * 0.1;
       const point = (value: number, index: number) => ({
-        x: pad.left + index / Math.max(1, result.equityPercent.length - 1) * chartW,
+        x: pad.left + index / Math.max(1, priceValues.length - 1) * chartW,
         y: pad.top + (1 - (value - min) / (max - min)) * chartH,
       });
 
@@ -299,8 +301,11 @@ function EquityChart({ result, strategy }: { result: BacktestResult; strategy: S
         ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
         ctx.fillStyle = "#62708a";
         ctx.textAlign = "right";
-        ctx.fillText(`${value.toFixed(1)}%`, pad.left - 8, y + 3);
+        ctx.fillText(value.toFixed(2), pad.left - 8, y + 3);
       }
+      ctx.fillStyle = "#7b899f";
+      ctx.textAlign = "left";
+      ctx.fillText("元", 8, pad.top - 10);
 
       for (let i = 0; i <= 6; i += 1) {
         const x = pad.left + chartW / 6 * i;
@@ -309,23 +314,22 @@ function EquityChart({ result, strategy }: { result: BacktestResult; strategy: S
         ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, height - pad.bottom); ctx.stroke();
       }
 
-      ctx.setLineDash([6, 4]);
+      ctx.setLineDash([]);
       ctx.strokeStyle = "rgba(247, 203, 75, .82)";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      result.benchmarkPercent.forEach((value, index) => {
+      ma20Values.forEach((value, index) => {
         const p = point(value, index);
         index === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
       });
       ctx.stroke();
-      ctx.setLineDash([]);
 
       const gradient = ctx.createLinearGradient(0, pad.top, 0, height - pad.bottom);
       gradient.addColorStop(0, "rgba(131, 196, 255, .24)");
       gradient.addColorStop(.7, "rgba(73, 137, 211, .06)");
       gradient.addColorStop(1, "rgba(73, 137, 211, 0)");
       ctx.beginPath();
-      result.equityPercent.forEach((value, index) => {
+      priceValues.forEach((value, index) => {
         const p = point(value, index);
         index === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
       });
@@ -341,19 +345,19 @@ function EquityChart({ result, strategy }: { result: BacktestResult; strategy: S
       ctx.shadowColor = "rgba(142, 202, 255, .72)";
       ctx.shadowBlur = 9;
       ctx.beginPath();
-      result.equityPercent.forEach((value, index) => {
+      priceValues.forEach((value, index) => {
         const p = point(value, index);
         index === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
       });
       ctx.stroke();
       ctx.restore();
 
-      const finalPoint = point(result.equityPercent.at(-1) ?? 0, result.equityPercent.length - 1);
+      const finalPoint = point(priceValues.at(-1) ?? 0, priceValues.length - 1);
       ctx.beginPath(); ctx.arc(finalPoint.x, finalPoint.y, 4, 0, Math.PI * 2); ctx.fillStyle = "#ffffff"; ctx.fill();
       ctx.beginPath(); ctx.arc(finalPoint.x, finalPoint.y, 7, 0, Math.PI * 2); ctx.strokeStyle = "rgba(142, 202, 255, .5)"; ctx.lineWidth = 3; ctx.stroke();
 
       result.trades.forEach((trade) => {
-        const p = point(result.equityPercent[trade.index], trade.index);
+        const p = point(bars[trade.index]?.close ?? trade.price, trade.index);
         const isBuy = trade.action === "buy";
         const color = isBuy ? "#ff5b6e" : "#37d6aa";
         const iconY = Math.max(pad.top + 10, Math.min(height - pad.bottom - 10, p.y + (isBuy ? 20 : -20)));
@@ -369,18 +373,18 @@ function EquityChart({ result, strategy }: { result: BacktestResult; strategy: S
         ctx.closePath(); ctx.fillStyle = "#071018"; ctx.fill();
       });
 
-      const labelIndexes = [0, .25, .5, .75, 1].map((ratio) => Math.round((result.timestamps.length - 1) * ratio));
+      const labelIndexes = [0, .25, .5, .75, 1].map((ratio) => Math.round((bars.length - 1) * ratio));
       ctx.fillStyle = "#62708a"; ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace"; ctx.textAlign = "center";
-      labelIndexes.forEach((index) => ctx.fillText(dateFormatter.format(result.timestamps[index]), point(0, index).x, height - 8));
+      labelIndexes.forEach((index) => ctx.fillText(dateFormatter.format(bars[index].timestamp), point(priceValues[index], index).x, height - 8));
     };
 
     draw();
     const observer = new ResizeObserver(draw);
     if (canvas.parentElement) observer.observe(canvas.parentElement);
     return () => observer.disconnect();
-  }, [result, strategy]);
+  }, [result, bars]);
 
-  return <canvas ref={ref} aria-label={`${strategy.name}真实日K回测净值曲线`} />;
+  return <canvas ref={ref} aria-label="真实历史日K收盘价与MA20均线" />;
 }
 
 function Metric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "up" | "down" }) {
@@ -555,8 +559,8 @@ export default function Home() {
           </section>
 
           <section className="chart-panel panel">
-            <div className="chart-header"><div><span className="eyebrow">TICKFLOW PERFORMANCE</span><h2>{selectedItem?.name ?? "建设银行"}策略净值</h2></div><div className="legend"><span className="strategy-line" />策略净值 <span className="benchmark-line" />买入持有 <i className="legend-buy" title="买入" aria-label="买入" /><i className="legend-sell" title="卖出" aria-label="卖出" /></div><div className="periods" role="group" aria-label="回测时间范围">{["近1月", "近3月", "近6月", "今年"].map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div></div>
-            <div className="chart-canvas"><EquityChart result={backtest} strategy={selectedStrategy} /></div>
+            <div className="chart-header"><div><span className="eyebrow">TICKFLOW DAILY PRICE</span><h2>{selectedItem?.name ?? "建设银行"}日K收盘价</h2></div><div className="legend"><span className="strategy-line" />收盘价 <span className="benchmark-line" />MA20 <i className="legend-buy" title="买入" aria-label="买入" /><i className="legend-sell" title="卖出" aria-label="卖出" /></div><div className="periods" role="group" aria-label="回测时间范围">{["近1月", "近3月", "近6月", "今年"].map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div></div>
+            <div className="chart-canvas"><EquityChart result={backtest} bars={periodBars} /></div>
             <div className="chart-summary"><div><span>模拟本金</span><b>¥ {initialCapital.toLocaleString("zh-CN")}</b></div><div><span>年化收益</span><b className={backtest.annualReturn >= 0 ? "up" : "down"}>{backtest.equityValues.length ? formatPercent(backtest.annualReturn) : "—"}</b></div><div><span>胜率</span><b>{backtest.equityValues.length ? formatPercent(backtest.winRate, false) : "—"}</b></div><div><span>真实日K交易</span><b>{backtest.trades.length} 笔</b></div></div>
           </section>
 
