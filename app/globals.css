@@ -1073,6 +1073,94 @@ input[type="range"] {
 .auth-submit i { font-style: normal; }
 .auth-footnote { color: #536177; display: block; font-size: 8px; line-height: 1.5; margin-top: 13px; text-align: center; }
 
+.notify-button { border-color: rgba(55, 214, 170, .25); color: #72dfbf; }
+.automation-studio { max-width: 1120px; }
+.automation-tabs { background: #0a0f17; border-bottom: 1px solid #222d3e; display: flex; gap: 2px; padding: 8px 24px 0; }
+.automation-tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: #708097; cursor: pointer; font-size: 10px; padding: 10px 12px; }
+.automation-tabs button.active { border-bottom-color: #4c8dff; color: #b8cef2; }
+.automation-tabs i { background: #182338; border-radius: 10px; color: #8093b1; font-size: 7px; font-style: normal; margin-left: 5px; padding: 2px 5px; }
+.automation-tabs i.connected { background: rgba(55, 214, 170, .12); color: var(--green); }
+.automation-body { padding-top: 16px; }
+.automation-body > .studio-error { margin: 0 0 12px; }
+.automation-layout { display: grid; gap: 18px; grid-template-columns: minmax(300px, .82fr) minmax(400px, 1.18fr); }
+.automation-form, .automation-list-wrap, .tickflow-settings > section, .tickflow-settings > aside { background: #090e15; border: 1px solid #222e40; border-radius: 11px; padding: 15px; }
+.automation-section-title { align-items: center; display: flex; justify-content: space-between; margin-bottom: 14px; }
+.automation-section-title span { color: #60728f; font-family: var(--font-geist-mono), monospace; font-size: 7px; letter-spacing: .14em; }
+.automation-section-title h3 { font-size: 13px; margin-top: 3px; }
+.automation-section-title > small { background: rgba(244, 201, 93, .08); border: 1px solid rgba(244, 201, 93, .2); border-radius: 5px; color: #c8aa5d; font-size: 7px; padding: 4px 6px; }
+.automation-section-title > button { background: transparent; border: 0; color: #7199d6; cursor: pointer; font-size: 8px; }
+.automation-form { display: grid; gap: 11px; }
+.automation-form label > span, .tickflow-settings label > span { color: #8998ad; display: block; font-size: 9px; margin-bottom: 6px; }
+.automation-form label > small { color: #55647a; display: block; font-size: 7px; line-height: 1.5; margin-top: 5px; }
+.automation-form input, .automation-form select, .tickflow-settings input { background: #0f1723; border: 1px solid #29374c; border-radius: 7px; color: #e7edf7; font-size: 10px; min-width: 0; padding: 9px; width: 100%; }
+.automation-form-grid { display: grid; gap: 9px; grid-template-columns: 1fr 1fr; }
+.mode-switch { background: #0d141f; border: 1px solid #26344a; border-radius: 8px; display: grid; gap: 4px; grid-template-columns: 1fr 1fr; padding: 4px; }
+.mode-switch button { background: transparent; border: 1px solid transparent; border-radius: 6px; color: #77869b; cursor: pointer; padding: 8px; text-align: left; }
+.mode-switch button.active { background: #18243a; border-color: #2e4770; color: #b5caf0; }
+.mode-switch b, .mode-switch small { display: block; }
+.mode-switch b { font-size: 9px; }
+.mode-switch small { color: #62728a; font-size: 7px; margin-top: 3px; }
+.mode-switch button.active small { color: #8099c0; }
+.automation-save { margin-top: 3px; width: 100%; }
+.automation-list { display: grid; gap: 9px; max-height: 540px; overflow: auto; }
+.automation-list article { background: #0d141f; border: 1px solid #26344a; border-radius: 9px; padding: 12px; transition: opacity .15s ease; }
+.automation-list article.disabled { opacity: .55; }
+.automation-list article > header { align-items: center; display: flex; justify-content: space-between; }
+.automation-list article > header > div { align-items: center; display: flex; gap: 7px; }
+.automation-list article > header i { background: #7996c0; border-radius: 50%; height: 6px; width: 6px; }
+.automation-list article > header i.realtime { background: var(--green); box-shadow: 0 0 8px rgba(55, 214, 170, .45); }
+.automation-list article > header b { font-size: 10px; }
+.task-toggle { background: #202b3c; border: 0; border-radius: 10px; cursor: pointer; height: 18px; padding: 2px; width: 32px; }
+.task-toggle span { background: #77849a; border-radius: 50%; display: block; height: 14px; transition: transform .15s ease; width: 14px; }
+.task-toggle.on { background: rgba(55, 214, 170, .22); }
+.task-toggle.on span { background: var(--green); transform: translateX(14px); }
+.automation-list article > p { align-items: center; display: flex; gap: 6px; margin: 10px 0; }
+.automation-list article > p strong { font-size: 9px; }
+.automation-list article > p span { color: #62728a; font-family: var(--font-geist-mono), monospace; font-size: 7px; }
+.automation-list article > p em { background: #172237; border-radius: 4px; color: #89a5cf; font-size: 7px; font-style: normal; margin-left: auto; padding: 3px 5px; }
+.automation-list dl { display: grid; gap: 6px 12px; grid-template-columns: 1fr 1fr; margin: 0; }
+.automation-list dl > div { min-width: 0; }
+.automation-list dt { color: #526078; font-size: 7px; }
+.automation-list dd { color: #94a2b6; font-size: 8px; margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.automation-list footer { border-top: 1px solid #202b3c; display: flex; gap: 7px; margin-top: 10px; padding-top: 9px; }
+.automation-list footer button { background: transparent; border: 1px solid #2b3a51; border-radius: 5px; color: #7f9bc5; cursor: pointer; font-size: 7px; padding: 5px 7px; }
+.automation-list footer button.danger { border-color: transparent; color: #a75e68; margin-left: auto; }
+.automation-empty { align-items: center; color: #617088; display: flex; flex-direction: column; justify-content: center; min-height: 210px; text-align: center; }
+.automation-empty i { align-items: center; background: #142035; border-radius: 50%; color: #7997c6; display: flex; font-size: 15px; font-style: normal; height: 42px; justify-content: center; margin-bottom: 9px; width: 42px; }
+.automation-empty b { color: #8998ad; font-size: 10px; }
+.automation-empty p { font-size: 8px; margin-top: 5px; }
+.notification-history { min-height: 480px; }
+.notification-table { border: 1px solid #222e40; border-radius: 9px; overflow: hidden; }
+.notification-head, .notification-row { align-items: center; display: grid; gap: 10px; grid-template-columns: 125px 50px 125px minmax(170px, 1fr) 70px; padding: 9px 11px; }
+.notification-head { background: #111927; color: #5f6e83; font-size: 7px; }
+.notification-row { border-top: 1px solid #202b3d; font-size: 8px; }
+.notification-row time { color: #66758c; font-family: var(--font-geist-mono), monospace; }
+.notification-row > b { border-radius: 4px; font-size: 7px; padding: 3px 5px; text-align: center; }
+.notification-row > b.buy { background: rgba(255, 91, 110, .12); color: #ff8291; }
+.notification-row > b.sell { background: rgba(55, 214, 170, .12); color: var(--green); }
+.notification-row > b.test { background: rgba(76, 141, 255, .12); color: #7fb0ff; }
+.notification-row > b.error { background: rgba(244, 201, 93, .1); color: #e0bd63; }
+.notification-row > span { color: #a1afc1; }
+.notification-row > span small { color: #627189; display: block; margin-top: 3px; }
+.notification-row > p { color: #7f8da1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notification-row > em { font-size: 7px; font-style: normal; text-align: right; }
+.notification-row > em.success { color: var(--green); }
+.notification-row > em.failed { color: #ff7d8d; }
+.tickflow-settings { display: grid; gap: 14px; grid-template-columns: minmax(340px, 1fr) minmax(260px, .7fr); }
+.tickflow-status { align-items: center; background: linear-gradient(135deg, rgba(244, 201, 93, .08), transparent), #090e15; border: 1px solid rgba(244, 201, 93, .22); border-radius: 11px; display: flex; gap: 14px; grid-column: 1 / -1; padding: 16px; }
+.tickflow-status.connected { background: linear-gradient(135deg, rgba(55, 214, 170, .08), transparent), #090e15; border-color: rgba(55, 214, 170, .25); }
+.tickflow-status > i { align-items: center; background: rgba(244, 201, 93, .12); border-radius: 10px; color: #e0bd63; display: flex; font-size: 18px; font-style: normal; height: 44px; justify-content: center; width: 44px; }
+.tickflow-status.connected > i { background: rgba(55, 214, 170, .13); color: var(--green); }
+.tickflow-status span { color: #627590; font-family: var(--font-geist-mono), monospace; font-size: 7px; letter-spacing: .13em; }
+.tickflow-status b { display: block; font-size: 13px; margin: 3px 0; }
+.tickflow-status p, .tickflow-settings > section > p { color: #6f7e93; font-size: 8px; line-height: 1.6; }
+.tickflow-settings h3 { font-size: 12px; margin-bottom: 6px; }
+.tickflow-settings label { display: block; margin-top: 15px; }
+.tickflow-actions { display: flex; gap: 9px; margin-top: 12px; }
+.remove-key { background: transparent; border: 1px solid rgba(255, 91, 110, .25); border-radius: 7px; color: #c86f7a; cursor: pointer; font-size: 9px; padding: 9px 12px; }
+.tickflow-settings > aside b { font-size: 10px; }
+.tickflow-settings > aside ul { color: #78879c; display: grid; font-size: 8px; gap: 9px; line-height: 1.5; margin: 12px 0 0; padding-left: 15px; }
+
 @keyframes toast-in {
   from { opacity: 0; transform: translate(-50%, 8px); }
 }
@@ -1098,6 +1186,10 @@ input[type="range"] {
   .rule-row { grid-template-columns: 22px 1fr 1fr; }
   .rule-row select:nth-of-type(3), .rule-row select:nth-of-type(4), .rule-row input { grid-column: span 1; }
   .remove-rule { grid-column: 3; grid-row: 2; justify-self: end; }
+  .automation-layout, .tickflow-settings { grid-template-columns: 1fr; }
+  .tickflow-status { grid-column: auto; }
+  .notification-table { overflow-x: auto; }
+  .notification-head, .notification-row { min-width: 720px; }
 }
 
 @media (max-width: 580px) {
@@ -1129,6 +1221,9 @@ input[type="range"] {
   .remove-rule { grid-column: 1; grid-row: 3; }
   .studio-actions { align-items: stretch; flex-direction: column; gap: 9px; }
   .account-popover { position: fixed; right: 10px; top: 58px; }
+  .automation-tabs { overflow-x: auto; padding-left: 12px; padding-right: 12px; }
+  .automation-tabs button { white-space: nowrap; }
+  .automation-form-grid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

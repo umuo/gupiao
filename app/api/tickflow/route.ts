@@ -1,45 +1,6 @@
-const TICKFLOW_FREE_API = "https://free-api.tickflow.org";
+import { fetchTickFlowKlines } from "../../tickflow-client";
+
 const SYMBOL_PATTERN = /^\d{6}\.(SH|SZ|BJ)$/;
-
-type CompactKlines = {
-  timestamp: number[];
-  open: number[];
-  high: number[];
-  low: number[];
-  close: number[];
-  volume: number[];
-  amount?: number[];
-};
-
-async function fetchKlines(symbol: string, count: number) {
-  const params = new URLSearchParams({
-    symbol,
-    period: "1d",
-    count: String(count),
-    adjust: "forward",
-  });
-  const response = await fetch(`${TICKFLOW_FREE_API}/v1/klines?${params}`, {
-    headers: { Accept: "application/json", "User-Agent": "paper-alpha/1.0" },
-  });
-
-  if (!response.ok) {
-    throw new Error(`TickFlow returned ${response.status}`);
-  }
-
-  const payload = (await response.json()) as { data?: CompactKlines };
-  if (!payload.data?.timestamp?.length) throw new Error("TickFlow returned no K-line data");
-
-  const compact = payload.data;
-  return compact.timestamp.map((timestamp, index) => ({
-    timestamp,
-    open: compact.open[index],
-    high: compact.high[index],
-    low: compact.low[index],
-    close: compact.close[index],
-    volume: compact.volume[index],
-    amount: compact.amount?.[index] ?? 0,
-  }));
-}
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -54,8 +15,8 @@ export async function GET(request: Request) {
     return Response.json({ error: "Invalid A-share symbol" }, { status: 400 });
   }
 
-  const settled = await Promise.allSettled(symbols.map(async (symbol) => [symbol, await fetchKlines(symbol, count)] as const));
-  const data: Record<string, Awaited<ReturnType<typeof fetchKlines>>> = {};
+  const settled = await Promise.allSettled(symbols.map(async (symbol) => [symbol, await fetchTickFlowKlines(symbol, count)] as const));
+  const data: Record<string, Awaited<ReturnType<typeof fetchTickFlowKlines>>> = {};
   const errors: Record<string, string> = {};
 
   settled.forEach((result, index) => {

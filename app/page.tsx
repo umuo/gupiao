@@ -2,8 +2,10 @@
 
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { AuthGate } from "./auth-gate";
+import { AutomationCenter } from "./automation-center";
+import { average, signalFor, standardDeviation, type Kline } from "./strategy-engine";
 import { StrategyStudio, type StudioMode } from "./strategy-studio";
-import { strategyRuleSummary, type IndicatorKey, type SavedStrategy, type StrategyRule } from "./strategy-model";
+import { strategyRuleSummary, type SavedStrategy } from "./strategy-model";
 
 type WatchItem = {
   code: string;
@@ -37,16 +39,6 @@ function parseCapitalInput(rawValue: string) {
   if (!Number.isFinite(amount) || amount <= 0) return null;
   return Math.round(amount);
 }
-
-type Kline = {
-  timestamp: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-  amount: number;
-};
 
 type Trade = {
   index: number;
@@ -95,74 +87,6 @@ function toSymbol(code: string) {
   if (code.startsWith("6")) return `${code}.SH`;
   if (code.startsWith("0") || code.startsWith("3")) return `${code}.SZ`;
   return `${code}.BJ`;
-}
-
-function average(values: number[]) {
-  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-}
-
-function standardDeviation(values: number[]) {
-  if (values.length < 2) return 0;
-  const mean = average(values);
-  return Math.sqrt(average(values.map((value) => (value - mean) ** 2)));
-}
-
-function movingAverage(bars: Kline[], index: number, length: number) {
-  if (index + 1 < length) return null;
-  return average(bars.slice(index - length + 1, index + 1).map((bar) => bar.close));
-}
-
-function calculateRsi(bars: Kline[], index: number, length = 14) {
-  if (index < length) return null;
-  let gains = 0;
-  let losses = 0;
-  for (let i = index - length + 1; i <= index; i += 1) {
-    const change = bars[i].close - bars[i - 1].close;
-    if (change >= 0) gains += change;
-    else losses -= change;
-  }
-  if (losses === 0) return 100;
-  const rs = gains / losses;
-  return 100 - 100 / (1 + rs);
-}
-
-function indicatorValue(key: IndicatorKey, bars: Kline[], index: number) {
-  const bar = bars[index];
-  if (!bar) return 0;
-  if (key === "close" || key === "open") return bar[key];
-  if (key === "ma5") return movingAverage(bars, index, 5) ?? bar.close;
-  if (key === "ma10") return movingAverage(bars, index, 10) ?? bar.close;
-  if (key === "ma20") return movingAverage(bars, index, 20) ?? bar.close;
-  if (key === "rsi14") return calculateRsi(bars, index) ?? 50;
-  if (key === "highest20") return Math.max(...bars.slice(Math.max(0, index - 20), index).map((item) => item.high));
-  if (key === "volumeRatio20") {
-    const baseline = average(bars.slice(Math.max(0, index - 20), index).map((item) => item.volume));
-    return baseline ? bar.volume / baseline : 0;
-  }
-  const sample = bars.slice(Math.max(0, index - 19), index + 1);
-  const returns = sample.slice(1).map((item, offset) => item.close / sample[offset].close - 1);
-  return standardDeviation(returns) * 100;
-}
-
-function ruleMatches(rule: StrategyRule, bars: Kline[], index: number) {
-  const left = indicatorValue(rule.left, bars, index);
-  const right = rule.rightType === "indicator" ? indicatorValue(rule.rightIndicator ?? "close", bars, index) : (rule.rightValue ?? 0);
-  if (rule.operator === "gt") return left > right;
-  if (rule.operator === "lt") return left < right;
-  const previousLeft = indicatorValue(rule.left, bars, index - 1);
-  const previousRight = rule.rightType === "indicator" ? indicatorValue(rule.rightIndicator ?? "close", bars, index - 1) : (rule.rightValue ?? 0);
-  return rule.operator === "crossesAbove"
-    ? left > right && previousLeft <= previousRight
-    : left < right && previousLeft >= previousRight;
-}
-
-function signalFor(strategy: Strategy, bars: Kline[], index: number, side: "buy" | "sell") {
-  if (index < 21) return { active: false, reason: "等待足够日K" };
-  const rules = side === "buy" ? strategy.entryRules : strategy.exitRules;
-  const logic = side === "buy" ? strategy.entryLogic : strategy.exitLogic;
-  const results = rules.map((rule) => ruleMatches(rule, bars, index));
-  const active = logic === "and" ? results.every(Boolean) : results.some(Boolean);
-  return { active, reason: strategyRuleSummary(rules, logic) };
 }
 
 function runBacktest(bars: Kline[], strategy: Strategy, initialCapital: number, positionPercent: number, stopLoss: number, takeProfit: number): BacktestResult {
@@ -328,7 +252,8 @@ function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }
       ctx.beginPath();
       ma20Values.forEach((value, index) => {
         const p = point(value, index);
-        index === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+        if (index === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
       });
       ctx.stroke();
 
@@ -339,7 +264,8 @@ function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }
       ctx.beginPath();
       priceValues.forEach((value, index) => {
         const p = point(value, index);
-        index === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+        if (index === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
       });
       ctx.lineTo(width - pad.right, height - pad.bottom);
       ctx.lineTo(pad.left, height - pad.bottom);
@@ -355,7 +281,8 @@ function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }
       ctx.beginPath();
       priceValues.forEach((value, index) => {
         const p = point(value, index);
-        index === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+        if (index === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
       });
       ctx.stroke();
       ctx.restore();
@@ -410,6 +337,7 @@ export default function Home() {
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy>(builtinStrategies[0]);
   const [customStrategies, setCustomStrategies] = useState<Strategy[]>([]);
   const [studioMode, setStudioMode] = useState<StudioMode>(null);
+  const [showAutomation, setShowAutomation] = useState(false);
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [authStatus, setAuthStatus] = useState<"loading" | "ready">("loading");
   const [needsBootstrap, setNeedsBootstrap] = useState(false);
@@ -438,6 +366,8 @@ export default function Home() {
   useEffect(() => {
     const stored = window.localStorage.getItem("paper-alpha-watchlist-v2");
     if (stored) {
+      // Restoring persisted client preferences is the purpose of this mount-only effect.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       try { setWatchlist(JSON.parse(stored)); }
       catch { window.localStorage.removeItem("paper-alpha-watchlist-v2"); }
     }
@@ -479,7 +409,11 @@ export default function Home() {
 
   const watchlistCodes = watchlist.map((item) => item.code).sort().join(",");
   useEffect(() => {
-    if (!watchlistCodes) { setSeries({}); setDataStatus("ready"); return; }
+    if (!watchlistCodes) {
+      // Keep the empty state synchronized when the final watchlist item is removed.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSeries({}); setDataStatus("ready"); return;
+    }
     const controller = new AbortController();
     setDataStatus("loading");
     const symbols = watchlistCodes.split(",").map(toSymbol).join(",");
@@ -541,6 +475,8 @@ export default function Home() {
   useEffect(() => {
     const query = search.trim();
     if (!showSearch || !query) {
+      // Reset results immediately when the search UI is closed or cleared.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSearchResults([]);
       setSearchStatus("idle");
       return;
@@ -572,7 +508,7 @@ export default function Home() {
   }, [search, showSearch, watchlist]);
 
   const selectedSymbol = toSymbol(selectedStock || "601939");
-  const allBars = series[selectedSymbol] ?? [];
+  const allBars = useMemo(() => series[selectedSymbol] ?? [], [selectedSymbol, series]);
   const periodBars = useMemo(() => {
     if (!allBars.length) return [];
     const sizes: Record<string, number> = { "近1月": 42, "近3月": 84, "近6月": 150, "今年": 240 };
@@ -660,14 +596,14 @@ export default function Home() {
           <b>数据日期 <em>{latestBar ? fullDateFormatter.format(latestBar.timestamp) : "同步中"}</em></b>
           <b><em>前复权 · 非实时</em></b>
         </div>
-        <div className="top-actions"><span className="trade-day">免费数据 · 收盘后更新</span><button className="icon-button" aria-label="AI接口配置" onClick={() => setStudioMode("settings")}>⌁<span>AI</span></button><div className="account-wrap"><button className="account-button" onClick={() => setShowAccount((value) => !value)} aria-expanded={showAccount}><i>{viewerInitials}</i><span>{viewer ? viewer.displayName : authStatus === "loading" ? "确认登录中" : "未登录"}<br /><small>{viewer ? viewer.role === "superadmin" ? "超级管理员" : "个人策略账户" : "登录后保存策略"}</small></span></button>{showAccount && <div className="account-popover"><span>ACCOUNT</span>{viewer ? <><div className={`role-badge ${viewer.role}`}>{viewer.role === "superadmin" ? "★ 超级管理员" : "普通用户"}</div><b>{viewer.displayName}</b><small>{viewer.email}</small><div><em>{customStrategies.length}</em> 个自定义策略</div><button onClick={() => { setStudioMode("settings"); setShowAccount(false); }}>AI 接口配置</button><button onClick={handleLogout}>退出登录</button></> : <small>请在登录窗口中进入账户</small>}</div>}</div></div>
+        <div className="top-actions"><span className="trade-day">免费日K · 实时需 TickFlow Key</span><button className="icon-button notify-button" aria-label="定时任务与通知" onClick={() => setShowAutomation(true)}>◴<span>通知</span></button><button className="icon-button" aria-label="AI接口配置" onClick={() => setStudioMode("settings")}>⌁<span>AI</span></button><div className="account-wrap"><button className="account-button" onClick={() => setShowAccount((value) => !value)} aria-expanded={showAccount}><i>{viewerInitials}</i><span>{viewer ? viewer.displayName : authStatus === "loading" ? "确认登录中" : "未登录"}<br /><small>{viewer ? viewer.role === "superadmin" ? "超级管理员" : "个人策略账户" : "登录后保存策略"}</small></span></button>{showAccount && <div className="account-popover"><span>ACCOUNT</span>{viewer ? <><div className={`role-badge ${viewer.role}`}>{viewer.role === "superadmin" ? "★ 超级管理员" : "普通用户"}</div><b>{viewer.displayName}</b><small>{viewer.email}</small><div><em>{customStrategies.length}</em> 个自定义策略</div><button onClick={() => { setShowAutomation(true); setShowAccount(false); }}>定时任务与通知</button><button onClick={() => { setStudioMode("settings"); setShowAccount(false); }}>AI 接口配置</button><button onClick={handleLogout}>退出登录</button></> : <small>请在登录窗口中进入账户</small>}</div>}</div></div>
       </header>
 
       <div className="workspace">
         <aside className="watch-panel panel">
           <div className="panel-heading"><div><span className="eyebrow">WATCHLIST</span><h2>自选股 <small>{watchlist.length}</small></h2></div><button className="add-button" onClick={() => setShowSearch((value) => !value)} aria-expanded={showSearch}>＋</button></div>
-          {showSearch && <div className="stock-search"><label htmlFor="stock-search">联网搜索 A 股</label><div className="search-input-wrap"><input id="stock-search" autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="输入股票代码或名称" /><i className={searchStatus === "loading" ? "search-spinner" : "search-cloud"}>{searchStatus === "loading" ? "" : "⌁"}</i></div><div className="search-results">{searchResults.map((stock) => <button key={stock.symbol} onClick={() => addStock(stock)}><span>{stock.name}<small>{stock.symbol}</small></span><b>＋</b></button>)}{searchStatus === "idle" && <p>输入关键词后通过 TickFlow 联网查询</p>}{searchStatus === "loading" && <p>正在联网搜索…</p>}{searchStatus === "ready" && searchResults.length === 0 && <p>没有找到匹配的 A 股</p>}{searchStatus === "error" && <p className="search-error">联网搜索暂时不可用，请重试</p>}</div></div>}
-          <div className="watch-list">{watchlist.map((stock) => <button key={stock.code} className={`watch-row ${selectedStock === stock.code ? "active" : ""}`} onClick={() => setSelectedStock(stock.code)}><span className="stock-identity"><b>{stock.name}</b><small>{toSymbol(stock.code)}</small></span><span className="stock-quote"><b>{stock.price ? stock.price.toFixed(2) : "—"}</b><small className={stock.change >= 0 ? "up" : "down"}>{stock.price ? `${stock.change >= 0 ? "+" : ""}${stock.change.toFixed(2)}%` : "读取中"}</small></span><span className={`signal signal-${stock.signal}`}>{stock.signal}</span><span className="remove-stock" role="button" aria-label={`移除${stock.name}`} onClick={(event) => { event.stopPropagation(); removeStock(stock.code); }}>×</span></button>)}</div>
+          {showSearch && <div className="stock-search"><label htmlFor="stock-search">联网搜索 A 股</label><div className="search-input-wrap"><input id="stock-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="输入股票代码或名称" /><i className={searchStatus === "loading" ? "search-spinner" : "search-cloud"}>{searchStatus === "loading" ? "" : "⌁"}</i></div><div className="search-results">{searchResults.map((stock) => <button key={stock.symbol} onClick={() => addStock(stock)}><span>{stock.name}<small>{stock.symbol}</small></span><b>＋</b></button>)}{searchStatus === "idle" && <p>输入关键词后通过 TickFlow 联网查询</p>}{searchStatus === "loading" && <p>正在联网搜索…</p>}{searchStatus === "ready" && searchResults.length === 0 && <p>没有找到匹配的 A 股</p>}{searchStatus === "error" && <p className="search-error">联网搜索暂时不可用，请重试</p>}</div></div>}
+          <div className="watch-list">{watchlist.map((stock) => <button key={stock.code} className={`watch-row ${selectedStock === stock.code ? "active" : ""}`} onClick={() => setSelectedStock(stock.code)}><span className="stock-identity"><b>{stock.name}</b><small>{toSymbol(stock.code)}</small></span><span className="stock-quote"><b>{stock.price ? stock.price.toFixed(2) : "—"}</b><small className={stock.change >= 0 ? "up" : "down"}>{stock.price ? `${stock.change >= 0 ? "+" : ""}${stock.change.toFixed(2)}%` : "读取中"}</small></span><span className={`signal signal-${stock.signal}`}>{stock.signal}</span><span className="remove-stock" role="button" tabIndex={0} aria-label={`移除${stock.name}`} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); removeStock(stock.code); } }} onClick={(event) => { event.stopPropagation(); removeStock(stock.code); }}>×</span></button>)}</div>
           <div className="watch-footer"><div><span>数据源</span><b>TickFlow</b></div><div><span>历史日K</span><b>{allBars.length || "—"} 根</b></div><button onClick={() => setRefreshTick((value) => value + 1)}>↻ 同步最新日K</button></div>
         </aside>
 
@@ -704,6 +640,7 @@ export default function Home() {
         </aside>
       </div>
       <StrategyStudio mode={studioMode} strategies={allStrategies} aiSettings={aiSettings} onAiSettingsChange={setAiSettings} onCreated={handleStrategyCreated} onDeleted={handleStrategyDeleted} onClose={() => setStudioMode(null)} />
+      <AutomationCenter open={showAutomation} watchlist={watchlist} strategies={allStrategies} defaultStopLoss={stopLoss} defaultTakeProfit={takeProfit} onClose={() => setShowAutomation(false)} onToast={setToast} />
       {authStatus === "ready" && !viewer && <AuthGate bootstrapAdmin={needsBootstrap} onAuthenticated={handleAuthenticated} />}
       {toast && <div className="toast" role="status"><i>✓</i>{toast}</div>}
     </main>

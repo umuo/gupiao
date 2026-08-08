@@ -50,6 +50,27 @@ implement `POST /chat/completions`. The API key is never written to the database
 or source code; it stays in the current page session and is sent only to the
 server-side proxy for the generation request.
 
+## Scheduled Signals and Webhooks
+
+Users can create two kinds of strategy notification jobs:
+
+- `daily`: uses TickFlow Free historical daily K-lines and runs once on selected
+  weekdays at the configured Beijing time.
+- `realtime`: checks only during the mainland continuous auction sessions
+  (`09:30-11:30`, `13:00-15:00`, Asia/Shanghai) and requires the user to save a
+  TickFlow API key with realtime quote permission.
+
+Realtime API keys are encrypted with AES-GCM before being stored in D1. Copy
+`.dev.vars.example` to `.dev.vars` for local development. In an independent
+deployment, configure long random values for `APP_ENCRYPTION_KEY` and
+`CRON_SECRET` as Worker secrets; do not commit production values. The Worker
+includes a once-per-minute scheduled handler. An external scheduler can instead
+call `POST /api/cron/run` with `Authorization: Bearer <CRON_SECRET>`.
+
+Webhook destinations must be public HTTPS URLs. Notifications contain the
+symbol, strategy, current price, action and reason, and are signals only—they do
+not submit real brokerage orders.
+
 ## Useful Commands
 
 - `npm run dev`: start local development

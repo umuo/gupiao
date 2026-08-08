@@ -1,14 +1,10 @@
 import { getAppUser } from "../../../auth";
+import { assertPublicHttpsUrl } from "../../../public-url";
 import { sanitizeStrategyDraft } from "../../../strategy-model";
 
 function compatibleEndpoint(baseUrl: string) {
   const raw = baseUrl.trim().replace(/\/+$/, "");
-  const url = new URL(raw.endsWith("/chat/completions") ? raw : `${raw}/chat/completions`);
-  if (url.protocol !== "https:") throw new Error("API Base URL 必须使用 HTTPS");
-  const host = url.hostname.toLowerCase();
-  const blocked = host === "localhost" || host.endsWith(".local") || host === "0.0.0.0" || host === "::1" || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
-  if (blocked) throw new Error("API 地址不能指向本地或内网服务");
-  return url.toString();
+  return assertPublicHttpsUrl(raw.endsWith("/chat/completions") ? raw : `${raw}/chat/completions`, "API Base URL").toString();
 }
 
 function extractJson(content: string) {
