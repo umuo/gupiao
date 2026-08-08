@@ -92,14 +92,14 @@ function ManualBuilder({ initialDraft, aiGenerated, onSaved }: { initialDraft?: 
   </div>;
 }
 
-function AiCreator({ settings, onSettingsChange, onSaved }: { settings: AiSettings; onSettingsChange: (settings: AiSettings) => void; onSaved: (strategy: SavedStrategy) => void }) {
+function AiCreator({ settings, onSaved }: { settings: AiSettings; onSaved: (strategy: SavedStrategy) => void }) {
   const [prompt, setPrompt] = useState("用5日和20日均线做一个趋势跟随策略，趋势转弱时卖出");
   const [generated, setGenerated] = useState<StrategyDraft | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const generate = async () => {
-    if (!settings.apiKey.trim()) { setError("请先填写 API Key；Key 只在本次页面会话中使用"); return; }
+    if (!settings.apiKey.trim()) { setError("请先关闭窗口，通过页面右上角的 AI 按钮完成接口配置"); return; }
     setLoading(true); setError("");
     try {
       const response = await fetch("/api/ai/strategy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...settings, prompt }) });
@@ -111,11 +111,14 @@ function AiCreator({ settings, onSettingsChange, onSaved }: { settings: AiSettin
     } finally { setLoading(false); }
   };
 
+  let provider = settings.baseUrl || "未配置接口";
+  try { provider = new URL(settings.baseUrl).host; } catch { /* keep the configured text */ }
+
   if (generated) return <ManualBuilder initialDraft={generated} aiGenerated onSaved={onSaved} />;
   return <div className="ai-creator">
     <div className="ai-prompt-card"><div className="ai-orb">✦</div><div><b>描述你的交易想法</b><p>AI 会把自然语言转换为当前回测引擎可以安全执行的指标条件。</p></div></div>
+    <div className="ai-connection-summary"><span>当前 AI 连接</span><b>{provider}</b><em>{settings.model || "未配置模型"}</em><i className={settings.apiKey ? "ready" : "missing"}>{settings.apiKey ? "● 已就绪" : "○ 请到右上角配置"}</i></div>
     <label><span>策略需求</span><textarea rows={5} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：股价突破20日高点并放量时买入，跌破MA10时卖出" /></label>
-    <div className="ai-connection-grid"><label><span>API Base URL</span><input value={settings.baseUrl} onChange={(event) => onSettingsChange({ ...settings, baseUrl: event.target.value })} placeholder="https://api.openai.com/v1" /></label><label><span>模型名称</span><input value={settings.model} onChange={(event) => onSettingsChange({ ...settings, model: event.target.value })} placeholder="gpt-4.1-mini" /></label><label className="wide"><span>API Key <em>不会保存到数据库</em></span><input type="password" autoComplete="off" value={settings.apiKey} onChange={(event) => onSettingsChange({ ...settings, apiKey: event.target.value })} placeholder="sk-…" /></label></div>
     {error && <p className="studio-error">{error}</p>}
     <div className="studio-actions"><span>兼容使用 /chat/completions 的服务</span><button className="ai-generate-button" onClick={generate} disabled={loading || !prompt.trim()}>{loading ? "AI 正在编写策略…" : "✦ 生成可执行策略"}</button></div>
   </div>;
@@ -131,7 +134,7 @@ function StrategyDocs({ strategies, onDeleted }: { strategies: Array<SavedStrate
 
 export function StrategyStudio({ mode, strategies, aiSettings, onAiSettingsChange, onCreated, onDeleted, onClose }: StudioProps) {
   if (!mode) return null;
-  const titles = { manual: ["新建策略", "使用指标条件搭建策略"], ai: ["AI 创建策略", "连接任意 OpenAI Compatible API"], docs: ["策略文档", "理解每条规则如何触发"], settings: ["AI 接口配置", "Base URL 与模型会保存到你的账户"] } as const;
+  const titles = { manual: ["新建策略", "使用指标条件搭建策略"], ai: ["AI 创建策略", "使用右上角统一配置的 AI 接口"], docs: ["策略文档", "理解每条规则如何触发"], settings: ["AI 接口配置", "Base URL 与模型会保存到你的账户"] } as const;
   const saveSettings = async () => {
     await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ aiBaseUrl: aiSettings.baseUrl, aiModel: aiSettings.model }) });
     onClose();
@@ -139,7 +142,7 @@ export function StrategyStudio({ mode, strategies, aiSettings, onAiSettingsChang
 
   return <div className="studio-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="strategy-studio" role="dialog" aria-modal="true" aria-labelledby="studio-title"><header className="studio-header"><div><span>STRATEGY STUDIO</span><h2 id="studio-title">{titles[mode][0]}</h2><p>{titles[mode][1]}</p></div><button onClick={onClose} aria-label="关闭">×</button></header><div className="studio-body">
     {mode === "manual" && <ManualBuilder onSaved={onCreated} />}
-    {mode === "ai" && <AiCreator settings={aiSettings} onSettingsChange={onAiSettingsChange} onSaved={onCreated} />}
+    {mode === "ai" && <AiCreator settings={aiSettings} onSaved={onCreated} />}
     {mode === "docs" && <StrategyDocs strategies={strategies} onDeleted={onDeleted} />}
     {mode === "settings" && <div className="settings-form"><div className="settings-security"><i>⌁</i><div><b>连接由你选择的模型服务</b><p>Base URL 和模型名保存到账号；API Key 只保留在当前页面，刷新后需要重新输入。</p></div></div><label><span>API Base URL</span><input value={aiSettings.baseUrl} onChange={(event) => onAiSettingsChange({ ...aiSettings, baseUrl: event.target.value })} placeholder="https://api.openai.com/v1" /></label><label><span>模型名称</span><input value={aiSettings.model} onChange={(event) => onAiSettingsChange({ ...aiSettings, model: event.target.value })} placeholder="gpt-4.1-mini" /></label><label><span>API Key</span><input type="password" autoComplete="off" value={aiSettings.apiKey} onChange={(event) => onAiSettingsChange({ ...aiSettings, apiKey: event.target.value })} placeholder="仅本次页面会话使用" /></label><div className="studio-actions"><span>请求由 Paper Alpha 服务端转发</span><button className="primary-studio-button" onClick={saveSettings}>保存配置</button></div></div>}
   </div></section></div>;
