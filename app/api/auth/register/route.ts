@@ -15,11 +15,13 @@ export async function POST(request: Request) {
     const db = getDb();
     const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
     if (existing) return Response.json({ error: "该邮箱已经注册" }, { status: 409 });
+    const [firstUser] = await db.select({ id: users.id }).from(users).limit(1);
+    const role = firstUser ? "user" : "superadmin";
     const userId = crypto.randomUUID();
     const passwordResult = await hashPassword(password);
-    await db.insert(users).values({ id: userId, email, displayName, passwordHash: passwordResult.hash, passwordSalt: passwordResult.salt });
+    await db.insert(users).values({ id: userId, email, displayName, role, passwordHash: passwordResult.hash, passwordSalt: passwordResult.salt });
     const session = await createSession(userId, request);
-    return Response.json({ user: { userId, email, displayName } }, { status: 201, headers: { "Set-Cookie": session.cookie } });
+    return Response.json({ user: { userId, email, displayName, role } }, { status: 201, headers: { "Set-Cookie": session.cookie } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "注册失败" }, { status: 400 });
   }

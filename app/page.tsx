@@ -19,7 +19,7 @@ type Strategy = SavedStrategy & {
   builtin: boolean;
 };
 
-type Viewer = { userId: string; displayName: string; email: string };
+type Viewer = { userId: string; displayName: string; email: string; role: "user" | "superadmin" };
 
 type StockSearchResult = {
   symbol: string;
@@ -412,6 +412,7 @@ export default function Home() {
   const [studioMode, setStudioMode] = useState<StudioMode>(null);
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [authStatus, setAuthStatus] = useState<"loading" | "ready">("loading");
+  const [needsBootstrap, setNeedsBootstrap] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [aiSettings, setAiSettings] = useState({ baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini", apiKey: "" });
   const [period, setPeriod] = useState("近6月");
@@ -462,10 +463,10 @@ export default function Home() {
   useEffect(() => {
     let active = true;
     fetch("/api/user")
-      .then((response) => response.json() as Promise<{ user: Viewer | null }>)
+      .then((response) => response.json() as Promise<{ user: Viewer | null; needsBootstrap: boolean }>)
       .then(async (payload) => {
         if (!active) return;
-        setViewer(payload.user); setAuthStatus("ready");
+        setViewer(payload.user); setNeedsBootstrap(payload.needsBootstrap); setAuthStatus("ready");
         if (payload.user) await loadAccountData();
       })
       .catch(() => { if (active) setAuthStatus("ready"); });
@@ -622,7 +623,7 @@ export default function Home() {
   };
 
   const handleAuthenticated = (user: Viewer) => {
-    setViewer(user); setAuthStatus("ready"); setToast(`欢迎，${user.displayName}`);
+    setViewer(user); setNeedsBootstrap(false); setAuthStatus("ready"); setToast(user.role === "superadmin" ? "超级管理员创建成功" : `欢迎，${user.displayName}`);
     void loadAccountData();
   };
 
@@ -659,7 +660,7 @@ export default function Home() {
           <b>数据日期 <em>{latestBar ? fullDateFormatter.format(latestBar.timestamp) : "同步中"}</em></b>
           <b><em>前复权 · 非实时</em></b>
         </div>
-        <div className="top-actions"><span className="trade-day">免费数据 · 收盘后更新</span><button className="icon-button" aria-label="AI接口配置" onClick={() => setStudioMode("settings")}>⌁<span>AI</span></button><div className="account-wrap"><button className="account-button" onClick={() => setShowAccount((value) => !value)} aria-expanded={showAccount}><i>{viewerInitials}</i><span>{viewer ? viewer.displayName : authStatus === "loading" ? "确认登录中" : "未登录"}<br /><small>{viewer ? "个人策略账户" : "登录后保存策略"}</small></span></button>{showAccount && <div className="account-popover"><span>ACCOUNT</span>{viewer ? <><b>{viewer.displayName}</b><small>{viewer.email}</small><div><em>{customStrategies.length}</em> 个自定义策略</div><button onClick={() => { setStudioMode("settings"); setShowAccount(false); }}>AI 接口配置</button><button onClick={handleLogout}>退出登录</button></> : <small>请在登录窗口中进入账户</small>}</div>}</div></div>
+        <div className="top-actions"><span className="trade-day">免费数据 · 收盘后更新</span><button className="icon-button" aria-label="AI接口配置" onClick={() => setStudioMode("settings")}>⌁<span>AI</span></button><div className="account-wrap"><button className="account-button" onClick={() => setShowAccount((value) => !value)} aria-expanded={showAccount}><i>{viewerInitials}</i><span>{viewer ? viewer.displayName : authStatus === "loading" ? "确认登录中" : "未登录"}<br /><small>{viewer ? viewer.role === "superadmin" ? "超级管理员" : "个人策略账户" : "登录后保存策略"}</small></span></button>{showAccount && <div className="account-popover"><span>ACCOUNT</span>{viewer ? <><div className={`role-badge ${viewer.role}`}>{viewer.role === "superadmin" ? "★ 超级管理员" : "普通用户"}</div><b>{viewer.displayName}</b><small>{viewer.email}</small><div><em>{customStrategies.length}</em> 个自定义策略</div><button onClick={() => { setStudioMode("settings"); setShowAccount(false); }}>AI 接口配置</button><button onClick={handleLogout}>退出登录</button></> : <small>请在登录窗口中进入账户</small>}</div>}</div></div>
       </header>
 
       <div className="workspace">
@@ -703,7 +704,7 @@ export default function Home() {
         </aside>
       </div>
       <StrategyStudio mode={studioMode} strategies={allStrategies} aiSettings={aiSettings} onAiSettingsChange={setAiSettings} onCreated={handleStrategyCreated} onDeleted={handleStrategyDeleted} onClose={() => setStudioMode(null)} />
-      {authStatus === "ready" && !viewer && <AuthGate onAuthenticated={handleAuthenticated} />}
+      {authStatus === "ready" && !viewer && <AuthGate bootstrapAdmin={needsBootstrap} onAuthenticated={handleAuthenticated} />}
       {toast && <div className="toast" role="status"><i>✓</i>{toast}</div>}
     </main>
   );

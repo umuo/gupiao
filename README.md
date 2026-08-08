@@ -38,6 +38,11 @@ The `DB` binding is required for users, sessions, personal strategies, and AI
 endpoint preferences. Apply the generated migrations in `drizzle/` when
 deploying outside Sites.
 
+On a new database, the first registered account is assigned the `superadmin`
+role. When upgrading an existing database, migration `0001` promotes the
+earliest account if no superadmin exists. No default password is stored in the
+source; the site owner sets the superadmin password during registration.
+
 ## OpenAI-Compatible Strategy Generation
 
 Users can configure an HTTPS API Base URL and model name for services that

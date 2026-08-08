@@ -2,7 +2,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "../db";
 import { sessions, users } from "../db/schema";
 
-export type AppUser = { userId: string; displayName: string; email: string };
+export type AppUser = { userId: string; displayName: string; email: string; role: "user" | "superadmin" };
 
 const SESSION_COOKIE = "paper_alpha_session";
 const SESSION_SECONDS = 60 * 60 * 24 * 30;
@@ -55,7 +55,7 @@ export async function getAppUser(request: Request): Promise<AppUser | null> {
   const token = sessionTokenFrom(request);
   if (!token) return null;
   const sessionId = await sha256(token);
-  const [row] = await getDb().select({ userId: users.id, displayName: users.displayName, email: users.email }).from(sessions).innerJoin(users, eq(sessions.userId, users.id)).where(and(eq(sessions.id, sessionId), gt(sessions.expiresAt, new Date().toISOString()))).limit(1);
+  const [row] = await getDb().select({ userId: users.id, displayName: users.displayName, email: users.email, role: users.role }).from(sessions).innerJoin(users, eq(sessions.userId, users.id)).where(and(eq(sessions.id, sessionId), gt(sessions.expiresAt, new Date().toISOString()))).limit(1);
   return row ?? null;
 }
 

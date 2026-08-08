@@ -955,6 +955,8 @@ input[type="range"] {
 .account-popover > div { border-bottom: 1px solid #222d3e; border-top: 1px solid #222d3e; color: #7e8ca1; font-size: 9px; margin: 4px 0; padding: 9px 0; }
 .account-popover > div em { color: #86aff8; font-size: 15px; font-style: normal; font-weight: 700; }
 .account-popover > button { background: transparent; border: 0; color: #9cb6df; cursor: pointer; font-size: 10px; padding: 5px 0; text-align: left; }
+.account-popover > .role-badge { border: 0; border-radius: 4px; color: #8795aa; font-size: 8px; margin: 0; padding: 4px 7px; width: fit-content; }
+.account-popover > .role-badge.superadmin { background: rgba(244, 201, 93, .12); color: #f4c95d; }
 
 .strategy-tools { align-items: center; display: flex; gap: 5px; }
 .strategy-tools button { background: #121a26; border: 1px solid #26344a; border-radius: 6px; color: #8190a7; cursor: pointer; font-size: 8px; height: 27px; padding: 0 8px; }
@@ -1051,6 +1053,10 @@ input[type="range"] {
 .auth-gate > section > span { color: #6f84a4; font-family: var(--font-geist-mono), monospace; font-size: 8px; font-weight: 700; letter-spacing: .17em; }
 .auth-gate h2 { font-size: 22px; margin: 8px 0 6px; }
 .auth-gate > section > p { color: #7f8da2; font-size: 10px; line-height: 1.6; }
+.bootstrap-notice { align-items: center; background: rgba(244, 201, 93, .07); border: 1px solid rgba(244, 201, 93, .22); border-radius: 8px; display: flex; gap: 10px; margin-top: 14px; padding: 10px; }
+.bootstrap-notice > i { align-items: center; background: rgba(244, 201, 93, .13); border-radius: 7px; color: #f4c95d; display: flex; font-style: normal; height: 30px; justify-content: center; width: 30px; }
+.bootstrap-notice b { display: block; font-size: 9px; }
+.bootstrap-notice small { color: #8e835e; display: block; font-size: 8px; line-height: 1.4; margin-top: 2px; }
 .auth-tabs { background: #090e15; border: 1px solid #222e40; border-radius: 8px; display: grid; grid-template-columns: 1fr 1fr; margin: 18px 0 14px; padding: 3px; }
 .auth-tabs button { background: transparent; border: 0; border-radius: 6px; color: #6f7e94; cursor: pointer; font-size: 10px; padding: 8px; }
 .auth-tabs button.active { background: #19253a; color: #a9c5f5; }
