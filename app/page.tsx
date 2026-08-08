@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AuthGate } from "./auth-gate";
 import { NotificationCenter } from "./notification-center";
 import { average, signalFor, standardDeviation, type Kline } from "./strategy-engine";
@@ -180,6 +180,9 @@ function runBacktest(bars: Kline[], strategy: Strategy, initialCapital: number, 
 
 function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const [hover, setHover] = useState<{ index: number; x: number; alignLeft: boolean } | null>(null);
+  const hoverIndex = hover?.index ?? null;
+  const ma20Values = useMemo(() => bars.map((bar, index) => average(bars.slice(Math.max(0, index - 19), index + 1).map((item) => item.close))), [bars]);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -213,7 +216,6 @@ function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }
       const chartW = width - pad.left - pad.right;
       const chartH = height - pad.top - pad.bottom;
       const priceValues = bars.map((bar) => bar.close);
-      const ma20Values = bars.map((bar, index) => average(bars.slice(Math.max(0, index - 19), index + 1).map((item) => item.close)));
       const allValues = [...priceValues, ...ma20Values];
       const rawMin = Math.min(...allValues);
       const rawMax = Math.max(...allValues);
@@ -309,6 +311,22 @@ function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }
         ctx.closePath(); ctx.fillStyle = "#071018"; ctx.fill();
       });
 
+      if (hoverIndex !== null) {
+        const index = Math.min(hoverIndex, priceValues.length - 1);
+        const closePoint = point(priceValues[index], index);
+        const ma20Point = point(ma20Values[index], index);
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "rgba(174, 193, 222, .48)";
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(closePoint.x, pad.top); ctx.lineTo(closePoint.x, height - pad.bottom); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(closePoint.x, closePoint.y, 4.5, 0, Math.PI * 2); ctx.fillStyle = "#f4f8ff"; ctx.fill();
+        ctx.beginPath(); ctx.arc(closePoint.x, closePoint.y, 7, 0, Math.PI * 2); ctx.strokeStyle = "rgba(142, 202, 255, .55)"; ctx.lineWidth = 2; ctx.stroke();
+        ctx.beginPath(); ctx.arc(ma20Point.x, ma20Point.y, 4, 0, Math.PI * 2); ctx.fillStyle = "#f3c84b"; ctx.fill();
+        ctx.restore();
+      }
+
       const labelIndexes = [0, .25, .5, .75, 1].map((ratio) => Math.round((bars.length - 1) * ratio));
       ctx.fillStyle = "#62708a"; ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace"; ctx.textAlign = "center";
       labelIndexes.forEach((index) => ctx.fillText(dateFormatter.format(bars[index].timestamp), point(priceValues[index], index).x, height - 8));
@@ -318,9 +336,61 @@ function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }
     const observer = new ResizeObserver(draw);
     if (canvas.parentElement) observer.observe(canvas.parentElement);
     return () => observer.disconnect();
-  }, [result, bars]);
+  }, [result, bars, hoverIndex, ma20Values]);
 
-  return <canvas ref={ref} aria-label="真实历史日K收盘价与MA20均线" />;
+  const hoverForIndex = (index: number, width: number) => {
+    const x = 48 + index / Math.max(1, bars.length - 1) * Math.max(1, width - 68);
+    return { index, x, alignLeft: x > width * .62 };
+  };
+
+  const hoverFromPointer = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const canvas = ref.current;
+    if (!canvas || !bars.length || !result.equityPercent.length) return null;
+    const rect = canvas.getBoundingClientRect();
+    const pad = { top: 30, right: 20, bottom: 30, left: 48 };
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    if (x < pad.left || x > rect.width - pad.right || y < pad.top || y > rect.height - pad.bottom) return null;
+    const ratio = (x - pad.left) / Math.max(1, rect.width - pad.left - pad.right);
+    const index = Math.max(0, Math.min(bars.length - 1, Math.round(ratio * (bars.length - 1))));
+    return hoverForIndex(index, rect.width);
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const next = hoverFromPointer(event);
+    setHover((current) => current?.index === next?.index && current?.x === next?.x ? current : next);
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    const width = event.currentTarget.getBoundingClientRect().width;
+    setHover((current) => {
+      const index = Math.max(0, Math.min(bars.length - 1, (current?.index ?? bars.length - 1) + direction));
+      return hoverForIndex(index, width);
+    });
+  };
+
+  const activeIndex = hoverIndex !== null && bars[hoverIndex] ? hoverIndex : null;
+
+  return <>
+    <canvas
+      ref={ref}
+      aria-label="真实历史日K收盘价与MA20均线；可使用鼠标或左右方向键查看具体价格"
+      onBlur={() => setHover(null)}
+      onFocus={(event) => { if (bars.length) setHover(hoverForIndex(bars.length - 1, event.currentTarget.getBoundingClientRect().width)); }}
+      onKeyDown={handleKeyDown}
+      onPointerLeave={() => setHover(null)}
+      onPointerMove={handlePointerMove}
+      tabIndex={0}
+    />
+    {activeIndex !== null && hover && <div className={`chart-tooltip ${hover.alignLeft ? "align-left" : ""}`} style={{ left: hover.x }} role="status">
+      <time>{fullDateFormatter.format(bars[activeIndex].timestamp)}</time>
+      <div><i className="close-dot" /><span>收盘价</span><b>¥ {bars[activeIndex].close.toFixed(2)}</b></div>
+      <div><i className="ma20-dot" /><span>MA20</span><b>¥ {ma20Values[activeIndex].toFixed(3)}</b></div>
+    </div>}
+  </>;
 }
 
 function Metric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "up" | "down" }) {

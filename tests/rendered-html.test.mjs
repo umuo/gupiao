@@ -14,6 +14,8 @@ test("builds the strategy automation and realtime configuration surfaces", async
   ]);
   assert.match(page, /定时任务/);
   assert.match(page, /通知配置/);
+  assert.match(page, /chart-tooltip/);
+  assert.match(page, /左右方向键查看具体价格/);
   assert.match(tasks, /实时任务需要先配置 TickFlow Key/);
   assert.match(tasks, /可多选/);
   assert.match(tasks, /notificationChannelIds/);

@@ -646,8 +646,18 @@ h2 small {
 
 .periods button.active { background: #1c2c47; color: #8db6ff; }
 
-.chart-canvas { height: 280px; margin-top: 14px; width: 100%; }
-.chart-canvas canvas { display: block; }
+.chart-canvas { height: 280px; margin-top: 14px; position: relative; width: 100%; }
+.chart-canvas canvas { cursor: crosshair; display: block; outline: none; }
+.chart-canvas canvas:focus-visible { border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(76, 141, 255, .55); }
+.chart-tooltip { background: rgba(7, 12, 20, .94); border: 1px solid #33445e; border-radius: 7px; box-shadow: 0 8px 24px rgba(0, 0, 0, .4); min-width: 142px; padding: 8px 9px; pointer-events: none; position: absolute; top: 7px; transform: translateX(10px); z-index: 3; }
+.chart-tooltip.align-left { transform: translateX(calc(-100% - 10px)); }
+.chart-tooltip time { color: #73849c; display: block; font-family: var(--font-geist-mono), monospace; font-size: 7px; margin-bottom: 6px; }
+.chart-tooltip > div { align-items: center; display: grid; gap: 6px; grid-template-columns: 6px 1fr auto; margin-top: 4px; }
+.chart-tooltip i { border-radius: 50%; height: 6px; width: 6px; }
+.chart-tooltip i.close-dot { background: #f4f8ff; box-shadow: 0 0 5px rgba(142, 202, 255, .9); }
+.chart-tooltip i.ma20-dot { background: #f3c84b; }
+.chart-tooltip span { color: #8999af; font-size: 8px; }
+.chart-tooltip b { color: #e9f0fb; font-family: var(--font-geist-mono), monospace; font-size: 9px; }
 
 .chart-summary {
   border-top: 1px solid var(--border-soft);
