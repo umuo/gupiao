@@ -559,6 +559,12 @@ h2 small {
 .strategy-line, .benchmark-line { display: inline-block; height: 2px; margin: 0 5px 3px 10px; width: 17px; }
 .strategy-line { background: #f4f8ff; box-shadow: 0 0 6px rgba(142, 202, 255, .85); height: 3px; }
 .benchmark-line { background: #f3c84b; }
+.trade-legend {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 9px;
+}
 .legend-buy,
 .legend-sell {
   border-radius: 3px;
@@ -566,13 +572,12 @@ h2 small {
   font-style: normal;
   height: 16px;
   justify-content: center;
-  margin-left: 9px;
   position: relative;
   vertical-align: middle;
   width: 16px;
 }
 .legend-buy { background: var(--red); }
-.legend-sell { background: var(--green); margin-left: 4px; }
+.legend-sell { background: var(--green); }
 .legend-buy::after,
 .legend-sell::after {
   border-left: 4px solid transparent;
