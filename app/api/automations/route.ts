@@ -1,8 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { automations, userSettings } from "../../../db/schema";
+import { automations, notificationChannels, userSettings } from "../../../db/schema";
 import { getAppUser } from "../../auth";
-import { assertPublicHttpsUrl } from "../../public-url";
 import { sanitizeStrategyDraft } from "../../strategy-model";
 
 const SYMBOL_PATTERN = /^\d{6}\.(SH|SZ|BJ)$/;
@@ -16,11 +15,13 @@ function view(row: typeof automations.$inferSelect) {
 export async function GET(request: Request) {
   const user = await getAppUser(request);
   if (!user) return Response.json({ error: "请先登录" }, { status: 401 });
-  const [rows, settings] = await Promise.all([
+  const [rows, settings, channels] = await Promise.all([
     getDb().select().from(automations).where(eq(automations.userId, user.userId)).orderBy(desc(automations.createdAt)),
     getDb().select({ tickflow: userSettings.tickflowApiKeyEncrypted, hint: userSettings.tickflowKeyHint }).from(userSettings).where(eq(userSettings.userId, user.userId)).limit(1),
+    getDb().select({ id: notificationChannels.id, name: notificationChannels.name, enabled: notificationChannels.enabled }).from(notificationChannels).where(eq(notificationChannels.userId, user.userId)).orderBy(desc(notificationChannels.createdAt)),
   ]);
-  return Response.json({ automations: rows.map(view), tickflow: { configured: Boolean(settings[0]?.tickflow), hint: settings[0]?.hint ?? null } });
+  const channelNames = new Map(channels.map((channel) => [channel.id, channel.name]));
+  return Response.json({ automations: rows.map((row) => ({ ...view(row), notificationChannelName: row.notificationChannelId ? channelNames.get(row.notificationChannelId) ?? "渠道已删除" : "旧版 Webhook" })), channels, tickflow: { configured: Boolean(settings[0]?.tickflow), hint: settings[0]?.hint ?? null } });
 }
 
 export async function POST(request: Request) {
@@ -35,15 +36,18 @@ export async function POST(request: Request) {
     const dataMode = payload.dataMode === "realtime" ? "realtime" : "daily";
     const runTime = String(payload.runTime ?? "09:35");
     const intervalMinutes = Number(payload.intervalMinutes ?? 5);
-    const rawWebhookUrl = String(payload.webhookUrl ?? "").trim();
-    if (rawWebhookUrl.length > 2_000) throw new Error("Webhook 地址过长");
-    const webhookUrl = assertPublicHttpsUrl(rawWebhookUrl).href;
-    const stopLoss = Math.min(100, Math.max(0.1, Number(payload.stopLoss ?? 8)));
-    const takeProfit = Math.min(500, Math.max(0.1, Number(payload.takeProfit ?? 22)));
+    const notificationChannelId = String(payload.notificationChannelId ?? "");
+    const requestedStopLoss = Number(payload.stopLoss ?? 8);
+    const requestedTakeProfit = Number(payload.takeProfit ?? 22);
+    if (!Number.isFinite(requestedStopLoss) || !Number.isFinite(requestedTakeProfit)) throw new Error("止损止盈参数无效");
+    const stopLoss = Math.min(100, Math.max(0.1, requestedStopLoss));
+    const takeProfit = Math.min(500, Math.max(0.1, requestedTakeProfit));
     const strategy = sanitizeStrategyDraft(payload.strategy);
     if (!name || !stockName || !strategyId || !SYMBOL_PATTERN.test(symbol)) throw new Error("请完整选择股票和策略");
     if (!TIME_PATTERN.test(runTime)) throw new Error("执行时间格式无效");
     if (!INTERVALS.has(intervalMinutes)) throw new Error("实时检查间隔无效");
+    const [channel] = await getDb().select().from(notificationChannels).where(and(eq(notificationChannels.id, notificationChannelId), eq(notificationChannels.userId, user.userId))).limit(1);
+    if (!channel || !channel.enabled) throw new Error("请选择一个已启用的通知渠道");
     if (dataMode === "realtime") {
       const [settings] = await getDb().select({ key: userSettings.tickflowApiKeyEncrypted }).from(userSettings).where(eq(userSettings.userId, user.userId)).limit(1);
       if (!settings?.key) throw new Error("实时任务需要先配置 TickFlow Key");
@@ -58,10 +62,10 @@ export async function POST(request: Request) {
       strategyId,
       strategyName: strategy.name,
       strategyDefinition: definition,
+      notificationChannelId: channel.id,
       dataMode,
       runTime,
       intervalMinutes,
-      webhookUrl,
       stopLoss,
       takeProfit,
     }).returning();

@@ -52,7 +52,9 @@ server-side proxy for the generation request.
 
 ## Scheduled Signals and Webhooks
 
-Users can create two kinds of strategy notification jobs:
+Scheduled tasks and notification channels are independent. A task selects an
+existing channel rather than storing Webhook details itself. Users can create
+two kinds of strategy tasks:
 
 - `daily`: uses TickFlow Free historical daily K-lines and runs once on selected
   weekdays at the configured Beijing time.
@@ -67,9 +69,12 @@ deployment, configure long random values for `APP_ENCRYPTION_KEY` and
 includes a once-per-minute scheduled handler. An external scheduler can instead
 call `POST /api/cron/run` with `Authorization: Bearer <CRON_SECRET>`.
 
-Webhook destinations must be public HTTPS URLs. Notifications contain the
-symbol, strategy, current price, action and reason, and are signals only—they do
-not submit real brokerage orders.
+Notification channels support `GET`, `POST`, `PUT`, and `PATCH`, encrypted
+custom request headers, `application/json`, form-encoded and plain-text bodies,
+and user-defined message templates. Webhook destinations must be public HTTPS
+URLs. The templates can use task, symbol, strategy, price, action, reason and
+time variables. Notifications are signals only—they do not submit real
+brokerage orders.
 
 ## Useful Commands
 

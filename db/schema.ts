@@ -38,6 +38,22 @@ export const userSettings = sqliteTable("user_settings", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const notificationChannels = sqliteTable("notification_channels", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  url: text("url").notNull(),
+  method: text("method", { enum: ["GET", "POST", "PUT", "PATCH"] }).notNull().default("POST"),
+  headersEncrypted: text("headers_encrypted").notNull(),
+  headerNames: text("header_names").notNull().default("[]"),
+  contentType: text("content_type", { enum: ["application/json", "application/x-www-form-urlencoded", "text/plain"] }).notNull().default("application/json"),
+  messageTemplate: text("message_template").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  lastTestAt: text("last_test_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [index("idx_notification_channels_user_id").on(table.userId)]);
+
 export const automations = sqliteTable("automations", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull(),
@@ -47,12 +63,12 @@ export const automations = sqliteTable("automations", {
   strategyId: text("strategy_id").notNull(),
   strategyName: text("strategy_name").notNull(),
   strategyDefinition: text("strategy_definition").notNull(),
+  notificationChannelId: text("notification_channel_id"),
   dataMode: text("data_mode", { enum: ["daily", "realtime"] }).notNull().default("daily"),
   runTime: text("run_time").notNull().default("09:35"),
   intervalMinutes: integer("interval_minutes").notNull().default(5),
   timezone: text("timezone").notNull().default("Asia/Shanghai"),
   weekdays: text("weekdays").notNull().default("[1,2,3,4,5]"),
-  webhookUrl: text("webhook_url").notNull(),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   positionState: text("position_state", { enum: ["flat", "holding"] }).notNull().default("flat"),
   entryPrice: real("entry_price"),
@@ -73,7 +89,8 @@ export const automations = sqliteTable("automations", {
 export const notificationLogs = sqliteTable("notification_logs", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull(),
-  automationId: text("automation_id").notNull(),
+  automationId: text("automation_id"),
+  notificationChannelId: text("notification_channel_id"),
   type: text("type", { enum: ["buy", "sell", "test", "error"] }).notNull(),
   status: text("status", { enum: ["success", "failed"] }).notNull(),
   symbol: text("symbol").notNull(),

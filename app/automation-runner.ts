@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../db";
-import { automations, notificationLogs, userSettings } from "../db/schema";
-import { assertPublicHttpsUrl } from "./public-url";
+import { automations, notificationChannels, notificationLogs, userSettings } from "../db/schema";
+import { deliverNotification } from "./notification-delivery";
 import { decryptSecret } from "./secret-box";
 import { signalFor, type Kline, type SignalStrategy } from "./strategy-engine";
 import { fetchTickFlowKlines, fetchTickFlowQuote } from "./tickflow-client";
@@ -95,17 +95,6 @@ function mergeQuoteIntoDailyBars(bars: Kline[], quote: Awaited<ReturnType<typeof
   return next;
 }
 
-async function deliverWebhook(row: AutomationRow, payload: Record<string, unknown>) {
-  const webhookUrl = assertPublicHttpsUrl(row.webhookUrl);
-  const response = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "User-Agent": "paper-alpha-webhook/1.0" },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(10_000),
-  });
-  return { ok: response.ok, status: response.status };
-}
-
 async function writeLog(row: AutomationRow, input: {
   type: "buy" | "sell" | "test" | "error";
   status: "success" | "failed";
@@ -118,6 +107,7 @@ async function writeLog(row: AutomationRow, input: {
     id: crypto.randomUUID(),
     userId: row.userId,
     automationId: row.id,
+    notificationChannelId: row.notificationChannelId,
     type: input.type,
     status: input.status,
     symbol: row.symbol,
@@ -144,7 +134,7 @@ export async function runAutomation(row: AutomationRow) {
   if (row.dataMode === "realtime") {
     if (!weekdaysOf(row).includes(clock.weekday) || !inMainlandTradingSession(clock.minuteOfDay)) throw new Error("当前不在 A 股连续竞价时段，本次不检查实时信号");
     const [settings] = await getDb().select().from(userSettings).where(eq(userSettings.userId, row.userId)).limit(1);
-    if (!settings?.tickflowApiKeyEncrypted) throw new Error("请先在通知中心配置 TickFlow Key");
+    if (!settings?.tickflowApiKeyEncrypted) throw new Error("请先在定时任务的实时数据中配置 TickFlow Key");
     const quote = await fetchTickFlowQuote(row.symbol, await decryptSecret(settings.tickflowApiKeyEncrypted));
     if (shanghaiClock(new Date(quote.timestamp)).date !== clock.date) throw new Error("TickFlow 返回的不是今日实时行情，本次不触发信号");
     bars = mergeQuoteIntoDailyBars(bars, quote);
@@ -195,6 +185,10 @@ export async function runAutomation(row: AutomationRow) {
     return { action: null, price: bar.close, reason: "相同信号今日已通知", source };
   }
 
+  if (!row.notificationChannelId) throw new Error("该任务尚未选择独立通知渠道，请重新创建任务");
+  const [channel] = await getDb().select().from(notificationChannels).where(and(eq(notificationChannels.id, row.notificationChannelId), eq(notificationChannels.userId, row.userId))).limit(1);
+  if (!channel) throw new Error("任务关联的通知渠道不存在");
+
   const payload = {
     event: `strategy.${action}`,
     action,
@@ -215,7 +209,7 @@ export async function runAutomation(row: AutomationRow) {
   };
   let delivered: { ok: boolean; status: number };
   try {
-    delivered = await deliverWebhook(row, payload);
+    delivered = await deliverNotification(channel, payload);
   } catch (error) {
     await writeLog(row, { type: action, status: "failed", price: bar.close, reason: error instanceof Error ? error.message : "Webhook 请求失败", payload });
     await getDb().update(automations).set({ ...commonUpdate, lastRunDate: row.dataMode === "daily" ? null : row.lastRunDate }).where(eq(automations.id, row.id));
@@ -239,29 +233,6 @@ export async function runAutomation(row: AutomationRow) {
     entryPrice: action === "buy" ? bar.close : null,
   }).where(eq(automations.id, row.id));
   return { action, price: bar.close, reason, source };
-}
-
-export async function testAutomationWebhook(row: AutomationRow) {
-  const payload = {
-    event: "strategy.test",
-    automationId: row.id,
-    automationName: row.name,
-    symbol: row.symbol,
-    stockName: row.stockName,
-    message: "Webhook 测试成功",
-    sentAt: new Date().toISOString(),
-  };
-  try {
-    const delivered = await deliverWebhook(row, payload);
-    await writeLog(row, { type: "test", status: delivered.ok ? "success" : "failed", reason: delivered.ok ? "Webhook 测试成功" : `Webhook 返回 HTTP ${delivered.status}`, payload, httpStatus: delivered.status });
-    if (!delivered.ok) throw new Error(`Webhook 返回 HTTP ${delivered.status}`);
-    return { ok: true, httpStatus: delivered.status };
-  } catch (error) {
-    if (!(error instanceof Error && error.message.startsWith("Webhook 返回 HTTP"))) {
-      await writeLog(row, { type: "test", status: "failed", reason: error instanceof Error ? error.message : "Webhook 测试失败", payload });
-    }
-    throw error;
-  }
 }
 
 export async function runDueAutomations() {
