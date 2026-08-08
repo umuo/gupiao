@@ -1,10 +1,11 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { users } from "../../../../db/schema";
-import { createSession, normalizeEmail, verifyPassword } from "../../../auth";
+import { createSession, ensureDefaultAdmin, normalizeEmail, verifyPassword } from "../../../auth";
 
 export async function POST(request: Request) {
   try {
+    if (!(await ensureDefaultAdmin())) return Response.json({ error: "管理员账户尚未完成服务器初始化" }, { status: 503 });
     const payload = await request.json() as { email?: string; password?: string };
     const email = normalizeEmail(String(payload.email ?? ""));
     const password = String(payload.password ?? "");

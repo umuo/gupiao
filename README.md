@@ -38,10 +38,12 @@ The `DB` binding is required for users, sessions, personal strategies, and AI
 endpoint preferences. Apply the generated migrations in `drizzle/` when
 deploying outside Sites.
 
-On a new database, the first registered account is assigned the `superadmin`
-role. When upgrading an existing database, migration `0001` promotes the
-earliest account if no superadmin exists. No default password is stored in the
-source; the site owner sets the superadmin password during registration.
+Public registration is disabled. On a new database, the server initializes a
+`superadmin` account from the `DEFAULT_ADMIN_PASSWORD` runtime secret. The
+default identity is `admin@gupiao.local` / `系统管理员`; deployments can override
+it with `DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_NAME`. Only a signed-in
+superadmin can create ordinary users from the user-management panel. Passwords
+are stored only as salted PBKDF2-SHA256 hashes.
 
 ## OpenAI-Compatible Strategy Generation
 

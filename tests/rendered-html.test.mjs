@@ -6,10 +6,11 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("builds the strategy automation and realtime configuration surfaces", async () => {
-  const [page, tasks, notifications, worker] = await Promise.all([
+  const [page, tasks, notifications, users, worker] = await Promise.all([
     read("app/page.tsx"),
     read("app/task-center.tsx"),
     read("app/notification-center.tsx"),
+    read("app/user-management.tsx"),
     read("worker/index.ts"),
   ]);
   assert.match(page, /定时任务/);
@@ -27,8 +28,26 @@ test("builds the strategy automation and realtime configuration surfaces", async
   assert.match(notifications, /钉钉通知/);
   assert.match(notifications, /飞书通知/);
   assert.match(notifications, /测试连通性/);
+  assert.match(page, /用户管理/);
+  assert.match(users, /新增普通用户/);
+  assert.match(users, /\/api\/admin\/users/);
   assert.match(worker, /scheduled/);
   assert.match(worker, /runDueAutomations/);
+});
+
+test("keeps public registration closed and initializes the administrator securely", async () => {
+  const [authGate, auth, adminUsersRoute] = await Promise.all([
+    read("app/auth-gate.tsx"),
+    read("app/auth.ts"),
+    read("app/api/admin/users/route.ts"),
+  ]);
+  assert.match(authGate, /系统已关闭公开注册/);
+  assert.doesNotMatch(authGate, /api\/auth\/register/);
+  await assert.rejects(read("app/api/auth/register/route.ts"), { code: "ENOENT" });
+  assert.match(auth, /DEFAULT_ADMIN_PASSWORD/);
+  assert.match(auth, /ensureDefaultAdmin/);
+  assert.match(adminUsersRoute, /admin\.role !== "superadmin"/);
+  assert.match(adminUsersRoute, /role: "user"/);
 });
 
 test("keeps TickFlow credentials protected and persists notification state", async () => {

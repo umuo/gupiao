@@ -1,4 +1,5 @@
 import { and, eq, gt } from "drizzle-orm";
+import { env } from "cloudflare:workers";
 import { getDb } from "../db";
 import { sessions, users } from "../db/schema";
 
@@ -44,6 +45,41 @@ export async function verifyPassword(password: string, salt: string, expectedHas
   let difference = 0;
   for (let index = 0; index < actual.length; index += 1) difference |= actual.charCodeAt(index) ^ expectedHash.charCodeAt(index);
   return difference === 0;
+}
+
+export async function ensureDefaultAdmin() {
+  const db = getDb();
+  const [existingAdmin] = await db.select({ id: users.id }).from(users).where(eq(users.role, "superadmin")).limit(1);
+  if (existingAdmin) return true;
+
+  const runtimeEnv = env as unknown as {
+    DEFAULT_ADMIN_EMAIL?: string;
+    DEFAULT_ADMIN_NAME?: string;
+    DEFAULT_ADMIN_PASSWORD?: string;
+  };
+  const email = normalizeEmail(runtimeEnv.DEFAULT_ADMIN_EMAIL ?? "admin@gupiao.local");
+  const displayName = String(runtimeEnv.DEFAULT_ADMIN_NAME ?? "系统管理员").trim().slice(0, 40);
+  const password = String(runtimeEnv.DEFAULT_ADMIN_PASSWORD ?? "");
+  if (!validateEmail(email) || !displayName || password.length < 12 || password.length > 128) return false;
+
+  const passwordResult = await hashPassword(password);
+  await db.insert(users).values({
+    id: crypto.randomUUID(),
+    email,
+    displayName,
+    role: "superadmin",
+    passwordHash: passwordResult.hash,
+    passwordSalt: passwordResult.salt,
+  }).onConflictDoUpdate({
+    target: users.email,
+    set: {
+      displayName,
+      role: "superadmin",
+      passwordHash: passwordResult.hash,
+      passwordSalt: passwordResult.salt,
+    },
+  });
+  return true;
 }
 
 function sessionTokenFrom(request: Request) {

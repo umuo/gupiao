@@ -7,6 +7,7 @@ import { average, signalFor, standardDeviation, type Kline } from "./strategy-en
 import { StrategyStudio, type StudioMode } from "./strategy-studio";
 import { strategyRuleSummary, type SavedStrategy } from "./strategy-model";
 import { TaskCenter } from "./task-center";
+import { UserManagement } from "./user-management";
 
 type WatchItem = {
   code: string;
@@ -410,9 +411,10 @@ export default function Home() {
   const [studioMode, setStudioMode] = useState<StudioMode>(null);
   const [showAutomation, setShowAutomation] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showUserManagement, setShowUserManagement] = useState(false);
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [authStatus, setAuthStatus] = useState<"loading" | "ready">("loading");
-  const [needsBootstrap, setNeedsBootstrap] = useState(false);
+  const [adminReady, setAdminReady] = useState(true);
   const [showAccount, setShowAccount] = useState(false);
   const [aiSettings, setAiSettings] = useState({ baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini", apiKey: "" });
   const [period, setPeriod] = useState("近6月");
@@ -465,10 +467,10 @@ export default function Home() {
   useEffect(() => {
     let active = true;
     fetch("/api/user")
-      .then((response) => response.json() as Promise<{ user: Viewer | null; needsBootstrap: boolean }>)
+      .then((response) => response.json() as Promise<{ user: Viewer | null; adminReady: boolean }>)
       .then(async (payload) => {
         if (!active) return;
-        setViewer(payload.user); setNeedsBootstrap(payload.needsBootstrap); setAuthStatus("ready");
+        setViewer(payload.user); setAdminReady(payload.adminReady); setAuthStatus("ready");
         if (payload.user) await loadAccountData();
       })
       .catch(() => { if (active) setAuthStatus("ready"); });
@@ -631,7 +633,7 @@ export default function Home() {
   };
 
   const handleAuthenticated = (user: Viewer) => {
-    setViewer(user); setNeedsBootstrap(false); setAuthStatus("ready"); setToast(user.role === "superadmin" ? "超级管理员创建成功" : `欢迎，${user.displayName}`);
+    setViewer(user); setAuthStatus("ready"); setToast(`欢迎，${user.displayName}`);
     void loadAccountData();
   };
 
@@ -668,7 +670,7 @@ export default function Home() {
           <b>数据日期 <em>{latestBar ? fullDateFormatter.format(latestBar.timestamp) : "同步中"}</em></b>
           <b><em>前复权 · 非实时</em></b>
         </div>
-        <div className="top-actions"><span className="trade-day">免费日K · 实时需 TickFlow Key</span><button className="icon-button task-button" aria-label="定时任务" onClick={() => setShowAutomation(true)}>◴<span>任务</span></button><button className="icon-button notify-button" aria-label="通知配置" onClick={() => setShowNotifications(true)}>⌁<span>通知</span></button><button className="icon-button" aria-label="AI接口配置" onClick={() => setStudioMode("settings")}>✦<span>AI</span></button><div className="account-wrap"><button className="account-button" onClick={() => setShowAccount((value) => !value)} aria-expanded={showAccount}><i>{viewerInitials}</i><span>{viewer ? viewer.displayName : authStatus === "loading" ? "确认登录中" : "未登录"}<br /><small>{viewer ? viewer.role === "superadmin" ? "超级管理员" : "个人策略账户" : "登录后保存策略"}</small></span></button>{showAccount && <div className="account-popover"><span>ACCOUNT</span>{viewer ? <><div className={`role-badge ${viewer.role}`}>{viewer.role === "superadmin" ? "★ 超级管理员" : "普通用户"}</div><b>{viewer.displayName}</b><small>{viewer.email}</small><div><em>{customStrategies.length}</em> 个自定义策略</div><button onClick={() => { setShowAutomation(true); setShowAccount(false); }}>定时任务</button><button onClick={() => { setShowNotifications(true); setShowAccount(false); }}>通知配置</button><button onClick={() => { setStudioMode("settings"); setShowAccount(false); }}>AI 接口配置</button><button onClick={handleLogout}>退出登录</button></> : <small>请在登录窗口中进入账户</small>}</div>}</div></div>
+        <div className="top-actions"><span className="trade-day">免费日K · 实时需 TickFlow Key</span><button className="icon-button task-button" aria-label="定时任务" onClick={() => setShowAutomation(true)}>◴<span>任务</span></button><button className="icon-button notify-button" aria-label="通知配置" onClick={() => setShowNotifications(true)}>⌁<span>通知</span></button><button className="icon-button" aria-label="AI接口配置" onClick={() => setStudioMode("settings")}>✦<span>AI</span></button><div className="account-wrap"><button className="account-button" onClick={() => setShowAccount((value) => !value)} aria-expanded={showAccount}><i>{viewerInitials}</i><span>{viewer ? viewer.displayName : authStatus === "loading" ? "确认登录中" : "未登录"}<br /><small>{viewer ? viewer.role === "superadmin" ? "超级管理员" : "个人策略账户" : "登录后保存策略"}</small></span></button>{showAccount && <div className="account-popover"><span>ACCOUNT</span>{viewer ? <><div className={`role-badge ${viewer.role}`}>{viewer.role === "superadmin" ? "★ 超级管理员" : "普通用户"}</div><b>{viewer.displayName}</b><small>{viewer.email}</small><div><em>{customStrategies.length}</em> 个自定义策略</div>{viewer.role === "superadmin" && <button onClick={() => { setShowUserManagement(true); setShowAccount(false); }}>用户管理</button>}<button onClick={() => { setShowAutomation(true); setShowAccount(false); }}>定时任务</button><button onClick={() => { setShowNotifications(true); setShowAccount(false); }}>通知配置</button><button onClick={() => { setStudioMode("settings"); setShowAccount(false); }}>AI 接口配置</button><button onClick={handleLogout}>退出登录</button></> : <small>请使用管理员分配的账户登录</small>}</div>}</div></div>
       </header>
 
       <div className="workspace">
@@ -714,7 +716,8 @@ export default function Home() {
       <StrategyStudio mode={studioMode} strategies={allStrategies} aiSettings={aiSettings} onAiSettingsChange={setAiSettings} onCreated={handleStrategyCreated} onDeleted={handleStrategyDeleted} onClose={() => setStudioMode(null)} />
       <TaskCenter open={showAutomation} watchlist={watchlist} strategies={allStrategies} defaultStopLoss={stopLoss} defaultTakeProfit={takeProfit} onClose={() => setShowAutomation(false)} onToast={setToast} onOpenNotifications={() => { setShowAutomation(false); setShowNotifications(true); }} />
       <NotificationCenter open={showNotifications} onClose={() => setShowNotifications(false)} onToast={setToast} />
-      {authStatus === "ready" && !viewer && <AuthGate bootstrapAdmin={needsBootstrap} onAuthenticated={handleAuthenticated} />}
+      <UserManagement open={showUserManagement && viewer?.role === "superadmin"} onClose={() => setShowUserManagement(false)} onToast={setToast} />
+      {authStatus === "ready" && !viewer && <AuthGate adminReady={adminReady} onAuthenticated={handleAuthenticated} />}
       {toast && <div className="toast" role="status"><i>✓</i>{toast}</div>}
     </main>
   );
