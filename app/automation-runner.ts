@@ -1,6 +1,6 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../db";
-import { automations, notificationChannels, notificationLogs, userSettings } from "../db/schema";
+import { automationNotificationChannels, automations, notificationChannels, notificationLogs, userSettings } from "../db/schema";
 import { deliverNotification } from "./notification-delivery";
 import { decryptSecret } from "./secret-box";
 import { signalFor, type Kline, type SignalStrategy } from "./strategy-engine";
@@ -102,12 +102,13 @@ async function writeLog(row: AutomationRow, input: {
   reason: string;
   payload?: Record<string, unknown>;
   httpStatus?: number;
+  notificationChannelId?: string | null;
 }) {
   await getDb().insert(notificationLogs).values({
     id: crypto.randomUUID(),
     userId: row.userId,
     automationId: row.id,
-    notificationChannelId: row.notificationChannelId,
+    notificationChannelId: input.notificationChannelId ?? null,
     type: input.type,
     status: input.status,
     symbol: row.symbol,
@@ -185,9 +186,11 @@ export async function runAutomation(row: AutomationRow) {
     return { action: null, price: bar.close, reason: "相同信号今日已通知", source };
   }
 
-  if (!row.notificationChannelId) throw new Error("该任务尚未选择独立通知渠道，请重新创建任务");
-  const [channel] = await getDb().select().from(notificationChannels).where(and(eq(notificationChannels.id, row.notificationChannelId), eq(notificationChannels.userId, row.userId))).limit(1);
-  if (!channel) throw new Error("任务关联的通知渠道不存在");
+  const mappings = await getDb().select({ channelId: automationNotificationChannels.notificationChannelId }).from(automationNotificationChannels).where(and(eq(automationNotificationChannels.automationId, row.id), eq(automationNotificationChannels.userId, row.userId)));
+  const channelIds = mappings.map((mapping) => mapping.channelId);
+  if (!channelIds.length) throw new Error("该任务尚未选择通知渠道");
+  const channels = await getDb().select().from(notificationChannels).where(and(eq(notificationChannels.userId, row.userId), inArray(notificationChannels.id, channelIds)));
+  if (!channels.length) throw new Error("任务关联的通知渠道均不存在");
 
   const payload = {
     event: `strategy.${action}`,
@@ -207,20 +210,36 @@ export async function runAutomation(row: AutomationRow) {
     sentAt: now.toISOString(),
     notice: "仅为模拟策略信号，不构成投资建议或真实委托。",
   };
-  let delivered: { ok: boolean; status: number };
-  try {
-    delivered = await deliverNotification(channel, payload);
-  } catch (error) {
-    await writeLog(row, { type: action, status: "failed", price: bar.close, reason: error instanceof Error ? error.message : "Webhook 请求失败", payload });
+  const deliveryResults = await Promise.all(channels.map(async (channel) => {
+    try {
+      const delivered = await deliverNotification(channel, payload);
+      await writeLog(row, {
+        type: action,
+        status: delivered.ok ? "success" : "failed",
+        price: bar.close,
+        reason: delivered.ok ? reason : delivered.error || `通知渠道返回 HTTP ${delivered.status}`,
+        payload,
+        httpStatus: delivered.status,
+        notificationChannelId: channel.id,
+      });
+      return delivered.ok;
+    } catch (error) {
+      await writeLog(row, {
+        type: action,
+        status: "failed",
+        price: bar.close,
+        reason: error instanceof Error ? error.message : "通知投递失败",
+        payload,
+        notificationChannelId: channel.id,
+      });
+      return false;
+    }
+  }));
+  const succeeded = deliveryResults.filter(Boolean).length;
+  const missing = Math.max(0, channelIds.length - channels.length);
+  if (!succeeded) {
     await getDb().update(automations).set({ ...commonUpdate, lastRunDate: row.dataMode === "daily" ? null : row.lastRunDate }).where(eq(automations.id, row.id));
-    const deliveryError = error instanceof Error ? error : new Error("Webhook 请求失败");
-    deliveryError.name = "AutomationDeliveryError";
-    throw deliveryError;
-  }
-  await writeLog(row, { type: action, status: delivered.ok ? "success" : "failed", price: bar.close, reason, payload, httpStatus: delivered.status });
-  if (!delivered.ok) {
-    await getDb().update(automations).set({ ...commonUpdate, lastRunDate: row.dataMode === "daily" ? null : row.lastRunDate }).where(eq(automations.id, row.id));
-    const deliveryError = new Error(`Webhook 返回 HTTP ${delivered.status}`);
+    const deliveryError = new Error("所有通知渠道均投递失败");
     deliveryError.name = "AutomationDeliveryError";
     throw deliveryError;
   }
@@ -232,7 +251,7 @@ export async function runAutomation(row: AutomationRow) {
     positionState: action === "buy" ? "holding" : "flat",
     entryPrice: action === "buy" ? bar.close : null,
   }).where(eq(automations.id, row.id));
-  return { action, price: bar.close, reason, source };
+  return { action, price: bar.close, reason, source, deliveries: { total: channelIds.length, succeeded, failed: deliveryResults.length - succeeded + missing } };
 }
 
 export async function runDueAutomations() {

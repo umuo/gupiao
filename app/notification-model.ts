@@ -1,9 +1,11 @@
 export const notificationMethods = ["GET", "POST", "PUT", "PATCH"] as const;
 export const notificationContentTypes = ["application/json", "application/x-www-form-urlencoded", "text/plain"] as const;
+export const notificationChannelTypes = ["webhook", "dingtalk", "feishu"] as const;
 
 export type NotificationMethod = typeof notificationMethods[number];
 export type NotificationContentType = typeof notificationContentTypes[number];
 export type NotificationHeader = { name: string; value: string };
+export type NotificationChannelType = typeof notificationChannelTypes[number];
 
 export const defaultMessageTemplate = `{
   "event": "strategy.{{action}}",
@@ -15,6 +17,38 @@ export const defaultMessageTemplate = `{
   "reason": "{{reason}}",
   "time": "{{marketTime}}"
 }`;
+
+export const dingtalkMessageTemplate = `{
+  "msgtype": "text",
+  "text": {
+    "content": "【Paper Alpha】{{actionText}}提醒\\n股票：{{stockName}}（{{symbol}}）\\n策略：{{strategyName}}\\n价格：{{price}}\\n原因：{{reason}}\\n时间：{{marketTime}}"
+  }
+}`;
+
+export const feishuMessageTemplate = `{
+  "msg_type": "text",
+  "content": {
+    "text": "【Paper Alpha】{{actionText}}提醒\\n股票：{{stockName}}（{{symbol}}）\\n策略：{{strategyName}}\\n价格：{{price}}\\n原因：{{reason}}\\n时间：{{marketTime}}"
+  }
+}`;
+
+export const notificationTypeLabels: Record<NotificationChannelType, string> = {
+  webhook: "自定义 Webhook",
+  dingtalk: "钉钉通知",
+  feishu: "飞书通知",
+};
+
+export function templateForNotificationType(type: NotificationChannelType) {
+  if (type === "dingtalk") return dingtalkMessageTemplate;
+  if (type === "feishu") return feishuMessageTemplate;
+  return defaultMessageTemplate;
+}
+
+export function normalizeNotificationChannelType(value: unknown): NotificationChannelType {
+  const type = String(value ?? "webhook");
+  if (!notificationChannelTypes.includes(type as NotificationChannelType)) throw new Error("通知渠道类型无效");
+  return type as NotificationChannelType;
+}
 
 const blockedHeaders = new Set(["host", "content-length", "transfer-encoding", "connection", "user-agent", "content-type"]);
 

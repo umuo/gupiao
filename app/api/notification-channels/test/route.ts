@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     symbol: "601939.SH",
     strategyName: "示例策略",
     price: 8.88,
-    reason: "这是一条 Webhook 测试消息",
+    reason: "这是一条通知渠道测试消息",
     dataMode: "test",
     source: "Paper Alpha",
     marketTime: now.toISOString(),
@@ -31,19 +31,19 @@ export async function POST(request: Request) {
     await getDb().insert(notificationLogs).values({
       id: crypto.randomUUID(), userId: user.userId, notificationChannelId: channel.id,
       type: "test", status: result.ok ? "success" : "failed", symbol: "601939.SH", price: 8.88,
-      reason: result.ok ? "Webhook 测试成功" : `Webhook 返回 HTTP ${result.status}`,
+      reason: result.ok ? "通知渠道连通性测试成功" : result.error || `通知渠道返回 HTTP ${result.status}`,
       payload: JSON.stringify({ rendered: result.rendered }), httpStatus: result.status,
     });
     await getDb().update(notificationChannels).set({ lastTestAt: now.toISOString(), updatedAt: now.toISOString() }).where(eq(notificationChannels.id, channel.id));
-    if (!result.ok) return Response.json({ error: `Webhook 返回 HTTP ${result.status}` }, { status: 502 });
+    if (!result.ok) return Response.json({ error: result.error || `通知渠道返回 HTTP ${result.status}` }, { status: 502 });
     return Response.json({ ok: true, httpStatus: result.status });
   } catch (error) {
     await getDb().insert(notificationLogs).values({
       id: crypto.randomUUID(), userId: user.userId, notificationChannelId: channel.id,
-      type: "test", status: "failed", symbol: "601939.SH", reason: error instanceof Error ? error.message : "Webhook 测试失败",
+      type: "test", status: "failed", symbol: "601939.SH", reason: error instanceof Error ? error.message : "通知渠道测试失败",
       payload: "{}",
     });
     await getDb().update(notificationChannels).set({ lastTestAt: now.toISOString(), updatedAt: now.toISOString() }).where(eq(notificationChannels.id, channel.id));
-    return Response.json({ error: error instanceof Error ? error.message : "Webhook 测试失败" }, { status: 502 });
+    return Response.json({ error: error instanceof Error ? error.message : "通知渠道测试失败" }, { status: 502 });
   }
 }

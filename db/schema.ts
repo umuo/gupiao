@@ -42,6 +42,7 @@ export const notificationChannels = sqliteTable("notification_channels", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull(),
   name: text("name").notNull(),
+  type: text("type", { enum: ["webhook", "dingtalk", "feishu"] }).notNull().default("webhook"),
   url: text("url").notNull(),
   method: text("method", { enum: ["GET", "POST", "PUT", "PATCH"] }).notNull().default("POST"),
   headersEncrypted: text("headers_encrypted").notNull(),
@@ -63,7 +64,6 @@ export const automations = sqliteTable("automations", {
   strategyId: text("strategy_id").notNull(),
   strategyName: text("strategy_name").notNull(),
   strategyDefinition: text("strategy_definition").notNull(),
-  notificationChannelId: text("notification_channel_id"),
   dataMode: text("data_mode", { enum: ["daily", "realtime"] }).notNull().default("daily"),
   runTime: text("run_time").notNull().default("09:35"),
   intervalMinutes: integer("interval_minutes").notNull().default(5),
@@ -84,6 +84,18 @@ export const automations = sqliteTable("automations", {
 }, (table) => [
   index("idx_automations_user_id").on(table.userId),
   index("idx_automations_enabled_time").on(table.enabled, table.runTime),
+]);
+
+export const automationNotificationChannels = sqliteTable("automation_notification_channels", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  automationId: text("automation_id").notNull(),
+  notificationChannelId: text("notification_channel_id").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_automation_channels_automation_id").on(table.automationId),
+  index("idx_automation_channels_channel_id").on(table.notificationChannelId),
+  uniqueIndex("idx_automation_channels_unique").on(table.automationId, table.notificationChannelId),
 ]);
 
 export const notificationLogs = sqliteTable("notification_logs", {

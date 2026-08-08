@@ -46,5 +46,24 @@ export async function deliverNotification(channel: ChannelRow, variables: Notifi
     body,
     signal: AbortSignal.timeout(10_000),
   });
-  return { ok: response.ok, status: response.status, rendered };
+  let providerOk = true;
+  let providerError = "";
+  if (channel.type === "dingtalk" || channel.type === "feishu") {
+    try {
+      const text = (await response.text()).slice(0, 4_000);
+      const payload = JSON.parse(text) as Record<string, unknown>;
+      if (channel.type === "dingtalk") {
+        providerOk = Number(payload.errcode) === 0;
+        providerError = providerOk ? "" : String(payload.errmsg ?? "钉钉机器人拒绝了请求");
+      } else {
+        const code = payload.code ?? payload.StatusCode;
+        providerOk = Number(code) === 0;
+        providerError = providerOk ? "" : String(payload.msg ?? payload.StatusMessage ?? "飞书机器人拒绝了请求");
+      }
+    } catch {
+      providerOk = false;
+      providerError = `${channel.type === "dingtalk" ? "钉钉" : "飞书"}返回了无法识别的响应`;
+    }
+  }
+  return { ok: response.ok && providerOk, status: response.status, rendered, error: response.ok ? providerError : `HTTP ${response.status}` };
 }
