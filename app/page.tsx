@@ -1,6 +1,9 @@
 "use client";
 
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { AuthGate } from "./auth-gate";
+import { StrategyStudio, type StudioMode } from "./strategy-studio";
+import { strategyRuleSummary, type IndicatorKey, type SavedStrategy, type StrategyRule } from "./strategy-model";
 
 type WatchItem = {
   code: string;
@@ -10,13 +13,13 @@ type WatchItem = {
   signal: string;
 };
 
-type Strategy = {
-  id: "breakout" | "ma" | "lowvol" | "rsi";
-  name: string;
+type Strategy = SavedStrategy & {
   summary: string;
-  tag: string;
   color: string;
+  builtin: boolean;
 };
+
+type Viewer = { userId: string; displayName: string; email: string };
 
 type StockSearchResult = {
   symbol: string;
@@ -78,11 +81,11 @@ const initialWatchlist: WatchItem[] = [
   { code: "601939", name: "建设银行", price: 0, change: 0, signal: "同步中" },
 ];
 
-const strategies: Strategy[] = [
-  { id: "breakout", name: "趋势突破", summary: "20 日新高 + 成交量确认", tag: "进取", color: "#ff5b6e" },
-  { id: "ma", name: "均线动量", summary: "MA5 / MA20 金叉与死叉", tag: "均衡", color: "#4c8dff" },
-  { id: "lowvol", name: "低波趋势", summary: "低波动率 + 站上 MA20", tag: "稳健", color: "#37d6aa" },
-  { id: "rsi", name: "RSI 逆转", summary: "超卖反弹 + RSI 离场", tag: "短线", color: "#b38cff" },
+const builtinStrategies: Strategy[] = [
+  { id: "breakout", name: "趋势突破", description: "收盘价突破前20日高点且成交量确认时入场，跌破MA10时离场。", summary: "20 日新高 + 成交量确认", tag: "进取", color: "#ff5b6e", builtin: true, entryLogic: "and", exitLogic: "or", entryRules: [{ left: "close", operator: "gt", rightType: "indicator", rightIndicator: "highest20" }, { left: "volumeRatio20", operator: "gt", rightType: "value", rightValue: 1.1 }], exitRules: [{ left: "close", operator: "lt", rightType: "indicator", rightIndicator: "ma10" }] },
+  { id: "ma", name: "均线动量", description: "MA5向上穿越MA20时买入，向下穿越时卖出。", summary: "MA5 / MA20 金叉与死叉", tag: "均衡", color: "#4c8dff", builtin: true, entryLogic: "and", exitLogic: "or", entryRules: [{ left: "ma5", operator: "crossesAbove", rightType: "indicator", rightIndicator: "ma20" }], exitRules: [{ left: "ma5", operator: "crossesBelow", rightType: "indicator", rightIndicator: "ma20" }] },
+  { id: "lowvol", name: "低波趋势", description: "20日波动率低于1.8%且价格站上MA20时买入，趋势转弱或波动放大时离场。", summary: "低波动率 + 站上 MA20", tag: "稳健", color: "#37d6aa", builtin: true, entryLogic: "and", exitLogic: "or", entryRules: [{ left: "volatility20", operator: "lt", rightType: "value", rightValue: 1.8 }, { left: "close", operator: "gt", rightType: "indicator", rightIndicator: "ma20" }], exitRules: [{ left: "close", operator: "lt", rightType: "indicator", rightIndicator: "ma20" }, { left: "volatility20", operator: "gt", rightType: "value", rightValue: 3 }] },
+  { id: "rsi", name: "RSI 逆转", description: "RSI进入超卖区并出现阳线时尝试反弹交易，RSI修复至62以上时止盈。", summary: "超卖反弹 + RSI 离场", tag: "短线", color: "#b38cff", builtin: true, entryLogic: "and", exitLogic: "or", entryRules: [{ left: "rsi14", operator: "lt", rightType: "value", rightValue: 32 }, { left: "close", operator: "gt", rightType: "indicator", rightIndicator: "open" }], exitRules: [{ left: "rsi14", operator: "gt", rightType: "value", rightValue: 62 }] },
 ];
 
 const dateFormatter = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit" });
@@ -123,44 +126,46 @@ function calculateRsi(bars: Kline[], index: number, length = 14) {
   return 100 - 100 / (1 + rs);
 }
 
-function signalFor(strategy: Strategy["id"], bars: Kline[], index: number, side: "buy" | "sell") {
-  if (index < 21) return { active: false, reason: "等待足够日K" };
+function indicatorValue(key: IndicatorKey, bars: Kline[], index: number) {
   const bar = bars[index];
-  const ma5 = movingAverage(bars, index, 5) ?? bar.close;
-  const ma10 = movingAverage(bars, index, 10) ?? bar.close;
-  const ma20 = movingAverage(bars, index, 20) ?? bar.close;
-  const previousMa5 = movingAverage(bars, index - 1, 5) ?? ma5;
-  const previousMa20 = movingAverage(bars, index - 1, 20) ?? ma20;
-
-  if (strategy === "breakout") {
-    const previousHigh = Math.max(...bars.slice(index - 20, index).map((item) => item.high));
-    const averageVolume = average(bars.slice(index - 20, index).map((item) => item.volume));
-    return side === "buy"
-      ? { active: bar.close > previousHigh && bar.volume > averageVolume * 1.1, reason: "突破20日高点且放量" }
-      : { active: bar.close < ma10, reason: "跌破MA10" };
+  if (!bar) return 0;
+  if (key === "close" || key === "open") return bar[key];
+  if (key === "ma5") return movingAverage(bars, index, 5) ?? bar.close;
+  if (key === "ma10") return movingAverage(bars, index, 10) ?? bar.close;
+  if (key === "ma20") return movingAverage(bars, index, 20) ?? bar.close;
+  if (key === "rsi14") return calculateRsi(bars, index) ?? 50;
+  if (key === "highest20") return Math.max(...bars.slice(Math.max(0, index - 20), index).map((item) => item.high));
+  if (key === "volumeRatio20") {
+    const baseline = average(bars.slice(Math.max(0, index - 20), index).map((item) => item.volume));
+    return baseline ? bar.volume / baseline : 0;
   }
-
-  if (strategy === "ma") {
-    return side === "buy"
-      ? { active: ma5 > ma20 && previousMa5 <= previousMa20, reason: "MA5上穿MA20" }
-      : { active: ma5 < ma20 && previousMa5 >= previousMa20, reason: "MA5下穿MA20" };
-  }
-
-  if (strategy === "lowvol") {
-    const returns = bars.slice(index - 19, index + 1).map((item, offset, source) => offset === 0 ? 0 : item.close / source[offset - 1].close - 1).slice(1);
-    const volatility = standardDeviation(returns);
-    return side === "buy"
-      ? { active: volatility < 0.018 && bar.close > ma20, reason: "低波动且站上MA20" }
-      : { active: bar.close < ma20 || volatility > 0.03, reason: "趋势或波动率离场" };
-  }
-
-  const rsi = calculateRsi(bars, index) ?? 50;
-  return side === "buy"
-    ? { active: rsi < 32 && bar.close > bar.open, reason: `RSI ${rsi.toFixed(1)} 超卖反弹` }
-    : { active: rsi > 62, reason: `RSI ${rsi.toFixed(1)} 止盈` };
+  const sample = bars.slice(Math.max(0, index - 19), index + 1);
+  const returns = sample.slice(1).map((item, offset) => item.close / sample[offset].close - 1);
+  return standardDeviation(returns) * 100;
 }
 
-function runBacktest(bars: Kline[], strategy: Strategy["id"], initialCapital: number, positionPercent: number, stopLoss: number, takeProfit: number): BacktestResult {
+function ruleMatches(rule: StrategyRule, bars: Kline[], index: number) {
+  const left = indicatorValue(rule.left, bars, index);
+  const right = rule.rightType === "indicator" ? indicatorValue(rule.rightIndicator ?? "close", bars, index) : (rule.rightValue ?? 0);
+  if (rule.operator === "gt") return left > right;
+  if (rule.operator === "lt") return left < right;
+  const previousLeft = indicatorValue(rule.left, bars, index - 1);
+  const previousRight = rule.rightType === "indicator" ? indicatorValue(rule.rightIndicator ?? "close", bars, index - 1) : (rule.rightValue ?? 0);
+  return rule.operator === "crossesAbove"
+    ? left > right && previousLeft <= previousRight
+    : left < right && previousLeft >= previousRight;
+}
+
+function signalFor(strategy: Strategy, bars: Kline[], index: number, side: "buy" | "sell") {
+  if (index < 21) return { active: false, reason: "等待足够日K" };
+  const rules = side === "buy" ? strategy.entryRules : strategy.exitRules;
+  const logic = side === "buy" ? strategy.entryLogic : strategy.exitLogic;
+  const results = rules.map((rule) => ruleMatches(rule, bars, index));
+  const active = logic === "and" ? results.every(Boolean) : results.some(Boolean);
+  return { active, reason: strategyRuleSummary(rules, logic) };
+}
+
+function runBacktest(bars: Kline[], strategy: Strategy, initialCapital: number, positionPercent: number, stopLoss: number, takeProfit: number): BacktestResult {
   if (bars.length < 25) return { ...emptyBacktest, finalEquity: initialCapital };
 
   const commissionRate = 0.00025;
@@ -402,7 +407,13 @@ function formatPercent(value: number, signed = true) {
 export default function Home() {
   const [watchlist, setWatchlist] = useState<WatchItem[]>(initialWatchlist);
   const [selectedStock, setSelectedStock] = useState("601939");
-  const [selectedStrategy, setSelectedStrategy] = useState<Strategy>(strategies[0]);
+  const [selectedStrategy, setSelectedStrategy] = useState<Strategy>(builtinStrategies[0]);
+  const [customStrategies, setCustomStrategies] = useState<Strategy[]>([]);
+  const [studioMode, setStudioMode] = useState<StudioMode>(null);
+  const [viewer, setViewer] = useState<Viewer | null>(null);
+  const [authStatus, setAuthStatus] = useState<"loading" | "ready">("loading");
+  const [showAccount, setShowAccount] = useState(false);
+  const [aiSettings, setAiSettings] = useState({ baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini", apiKey: "" });
   const [period, setPeriod] = useState("近6月");
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
@@ -421,6 +432,7 @@ export default function Home() {
   const [progress, setProgress] = useState(100);
   const [runCount, setRunCount] = useState(12);
   const [toast, setToast] = useState("");
+  const allStrategies = useMemo(() => [...builtinStrategies, ...customStrategies], [customStrategies]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("paper-alpha-watchlist-v2");
@@ -433,6 +445,32 @@ export default function Home() {
       setInitialCapital(storedCapital);
       setCapitalInput(String(storedCapital));
     }
+  }, []);
+
+  const loadAccountData = async () => {
+    const [strategyResponse, settingsResponse] = await Promise.all([fetch("/api/strategies"), fetch("/api/settings")]);
+    if (strategyResponse.ok) {
+      const strategyPayload = await strategyResponse.json() as { strategies: SavedStrategy[] };
+      setCustomStrategies(strategyPayload.strategies.map((strategy) => ({ ...strategy, summary: strategyRuleSummary(strategy.entryRules, strategy.entryLogic), color: "#f4c95d", builtin: false })));
+    }
+    if (settingsResponse.ok) {
+      const settingsPayload = await settingsResponse.json() as { settings: { aiBaseUrl: string; aiModel: string } };
+      setAiSettings((current) => ({ ...current, baseUrl: settingsPayload.settings.aiBaseUrl, model: settingsPayload.settings.aiModel }));
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/user")
+      .then((response) => response.json() as Promise<{ user: Viewer | null }>)
+      .then(async (payload) => {
+        if (!active) return;
+        setViewer(payload.user); setAuthStatus("ready");
+        if (payload.user) await loadAccountData();
+      })
+      .catch(() => { if (active) setAuthStatus("ready"); });
+    return () => { active = false; };
+  // The account bootstrap only runs once; later refreshes happen after login.
   }, []);
 
   useEffect(() => { window.localStorage.setItem("paper-alpha-watchlist-v2", JSON.stringify(watchlist)); }, [watchlist]);
@@ -539,10 +577,11 @@ export default function Home() {
     const sizes: Record<string, number> = { "近1月": 42, "近3月": 84, "近6月": 150, "今年": 240 };
     return allBars.slice(-Math.min(allBars.length, sizes[period] ?? 150));
   }, [allBars, period]);
-  const backtest = useMemo(() => runBacktest(periodBars, selectedStrategy.id, initialCapital, position, stopLoss, takeProfit), [periodBars, selectedStrategy.id, initialCapital, position, stopLoss, takeProfit]);
+  const backtest = useMemo(() => runBacktest(periodBars, selectedStrategy, initialCapital, position, stopLoss, takeProfit), [periodBars, selectedStrategy, initialCapital, position, stopLoss, takeProfit]);
   const selectedItem = watchlist.find((item) => item.code === selectedStock) ?? watchlist[0];
   const latestBar = allBars.at(-1);
   const recentTrades = backtest.trades.slice(-3).reverse();
+  const viewerInitials = viewer ? viewer.displayName.slice(0, 2).toUpperCase() : "…";
 
   const addStock = (stock: StockSearchResult) => {
     setWatchlist((items) => [...items, { code: stock.code, name: stock.name, price: 0, change: 0, signal: "同步中" }]);
@@ -562,6 +601,34 @@ export default function Home() {
     if (running) return;
     setRefreshTick((value) => value + 1);
     setProgress(0); setRunning(true);
+  };
+
+  const handleStrategyCreated = (saved: SavedStrategy) => {
+    const strategy: Strategy = { ...saved, summary: strategyRuleSummary(saved.entryRules, saved.entryLogic), color: "#f4c95d", builtin: false };
+    setCustomStrategies((items) => [strategy, ...items]);
+    setSelectedStrategy(strategy);
+    setStudioMode(null);
+    setToast(`${strategy.name}已保存并开始回测`);
+  };
+
+  const handleStrategyDeleted = async (id: string) => {
+    const target = customStrategies.find((strategy) => strategy.id === id);
+    if (!target || !window.confirm(`确认删除策略“${target.name}”？`)) return;
+    const response = await fetch("/api/strategies", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    if (!response.ok) { setToast("策略删除失败，请重试"); return; }
+    setCustomStrategies((items) => items.filter((strategy) => strategy.id !== id));
+    if (selectedStrategy.id === id) setSelectedStrategy(builtinStrategies[0]);
+    setToast(`${target.name}已删除`);
+  };
+
+  const handleAuthenticated = (user: Viewer) => {
+    setViewer(user); setAuthStatus("ready"); setToast(`欢迎，${user.displayName}`);
+    void loadAccountData();
+  };
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setViewer(null); setCustomStrategies([]); setSelectedStrategy(builtinStrategies[0]); setShowAccount(false);
   };
 
   const editCapital = (rawValue: string) => {
@@ -592,7 +659,7 @@ export default function Home() {
           <b>数据日期 <em>{latestBar ? fullDateFormatter.format(latestBar.timestamp) : "同步中"}</em></b>
           <b><em>前复权 · 非实时</em></b>
         </div>
-        <div className="top-actions"><span className="trade-day">免费数据 · 收盘后更新</span><button className="icon-button" aria-label="数据状态">◎<span>{dataStatus === "ready" ? "✓" : "!"}</span></button><button className="account-button"><i>GS</i><span>模拟账户<br /><small>真实日K版</small></span></button></div>
+        <div className="top-actions"><span className="trade-day">免费数据 · 收盘后更新</span><button className="icon-button" aria-label="AI接口配置" onClick={() => setStudioMode("settings")}>⌁<span>AI</span></button><div className="account-wrap"><button className="account-button" onClick={() => setShowAccount((value) => !value)} aria-expanded={showAccount}><i>{viewerInitials}</i><span>{viewer ? viewer.displayName : authStatus === "loading" ? "确认登录中" : "未登录"}<br /><small>{viewer ? "个人策略账户" : "登录后保存策略"}</small></span></button>{showAccount && <div className="account-popover"><span>ACCOUNT</span>{viewer ? <><b>{viewer.displayName}</b><small>{viewer.email}</small><div><em>{customStrategies.length}</em> 个自定义策略</div><button onClick={() => { setStudioMode("settings"); setShowAccount(false); }}>AI 接口配置</button><button onClick={handleLogout}>退出登录</button></> : <small>请在登录窗口中进入账户</small>}</div>}</div></div>
       </header>
 
       <div className="workspace">
@@ -624,8 +691,8 @@ export default function Home() {
 
         <aside className="control-column">
           <section className="strategy-panel panel">
-            <div className="panel-heading compact"><div><span className="eyebrow">STRATEGY</span><h2>策略引擎</h2></div><button className="more-button" aria-label="策略设置">•••</button></div>
-            <div className="strategy-list">{strategies.map((strategy) => <button key={strategy.id} className={`strategy-card ${selectedStrategy.id === strategy.id ? "active" : ""}`} onClick={() => setSelectedStrategy(strategy)} style={{ "--strategy-color": strategy.color } as CSSProperties}><span className="strategy-radio"><i /></span><span><b>{strategy.name}</b><small>{strategy.summary}</small></span><em>{strategy.tag}</em></button>)}</div>
+            <div className="panel-heading compact"><div><span className="eyebrow">STRATEGY</span><h2>策略引擎 <small>{allStrategies.length}</small></h2></div><div className="strategy-tools"><button onClick={() => setStudioMode("docs")}>文档</button><button className="ai-tool" onClick={() => setStudioMode("ai")}>✦ AI</button><button className="new-tool" onClick={() => setStudioMode("manual")} aria-label="新建策略">＋</button></div></div>
+            <div className="strategy-list">{allStrategies.map((strategy) => <button key={strategy.id} className={`strategy-card ${selectedStrategy.id === strategy.id ? "active" : ""}`} onClick={() => setSelectedStrategy(strategy)} style={{ "--strategy-color": strategy.color } as CSSProperties}><span className="strategy-radio"><i /></span><span><b>{strategy.name}{!strategy.builtin && <sup>我的</sup>}</b><small>{strategy.summary}</small></span><em>{strategy.tag}</em></button>)}</div>
             <div className="capital-config"><div className="section-label"><b>模拟账户资金</b><span>支持自定义金额</span></div><label htmlFor="initial-capital">初始本金</label><div className="capital-input"><i>¥</i><input id="initial-capital" type="text" value={capitalInput} onChange={(event) => editCapital(event.target.value)} onBlur={commitCapital} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} aria-describedby="capital-hint" /></div><small id="capital-hint" className="capital-hint">可输入 20000、2w 或 2万，按回车应用</small><div className="capital-presets">{[20_000, 100_000, 500_000, 1_000_000].map((amount) => <button key={amount} className={initialCapital === amount ? "active" : ""} onClick={() => { setInitialCapital(amount); setCapitalInput(String(amount)); }}>{amount / 10_000}万</button>)}</div></div>
             <div className="parameters"><div className="section-label"><b>执行参数</b><button onClick={() => { setPosition(30); setStopLoss(8); setTakeProfit(22); }}>恢复默认</button></div><label><span>单票仓位 <b>{position}%</b></span><input type="range" min="10" max="100" step="5" value={position} onChange={(event) => setPosition(Number(event.target.value))} /></label><div className="parameter-pair"><label><span>止损线</span><div><input type="number" min="1" max="20" value={stopLoss} onChange={(event) => setStopLoss(Number(event.target.value))} /><i>%</i></div></label><label><span>止盈线</span><div><input type="number" min="5" max="50" value={takeProfit} onChange={(event) => setTakeProfit(Number(event.target.value))} /><i>%</i></div></label></div><button className={`toggle-row ${autoRebalance ? "on" : ""}`} onClick={() => setAutoRebalance((value) => !value)} aria-pressed={autoRebalance}><span><b>收盘后自动调仓</b><small>新日K到达后检查信号</small></span><i><em /></i></button></div>
             <div className="execution-flow"><div className="section-label"><b>数据与执行流程</b><span>{dataStatus === "ready" ? "4 / 4 就绪" : "同步中"}</span></div><ol><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "1"}</i><span><b>读取 TickFlow 日K</b><small>{allBars.length || "—"} 根 · 前复权 · 真实历史数据</small></span></li><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "2"}</i><span><b>计算策略信号</b><small>{selectedStrategy.name} · 仅使用OHLCV</small></span></li><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "3"}</i><span><b>风控检查</b><small>仓位 / 止损 / 止盈</small></span></li><li className="ready"><i>4</i><span><b>虚拟撮合</b><small>佣金 0.025% · 滑点 0.1%</small></span></li></ol></div>
@@ -635,6 +702,8 @@ export default function Home() {
           <section className="activity-panel panel"><div className="panel-heading compact"><div><span className="eyebrow">REAL KLINE ACTIVITY</span><h2>策略成交日志</h2></div><i className={dataStatus === "ready" ? "live-dot" : "demo-dot"} /></div><div className="activity-list">{recentTrades.length ? recentTrades.map((trade) => <div className="activity-item" key={`${trade.index}-${trade.action}`}><time>{trade.date}</time><span className={trade.action === "buy" ? "buy" : "sell"}>{trade.action === "buy" ? "买入" : "卖出"}</span><p><b>{selectedItem?.name}</b><small>{trade.price.toFixed(2)} × {trade.shares.toLocaleString("zh-CN")}</small><em>{trade.reason}</em></p></div>) : <p className="activity-empty">当前区间内没有产生策略成交</p>}</div><button className="text-button" onClick={() => setToast(`当前区间共 ${backtest.trades.length} 笔真实日K模拟成交`)}>查看计算结果 →</button></section>
         </aside>
       </div>
+      <StrategyStudio mode={studioMode} strategies={allStrategies} aiSettings={aiSettings} onAiSettingsChange={setAiSettings} onCreated={handleStrategyCreated} onDeleted={handleStrategyDeleted} onClose={() => setStudioMode(null)} />
+      {authStatus === "ready" && !viewer && <AuthGate onAuthenticated={handleAuthenticated} />}
       {toast && <div className="toast" role="status"><i>✓</i>{toast}</div>}
     </main>
   );
