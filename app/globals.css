@@ -546,7 +546,7 @@ h2 small {
 .metric-card span { color: var(--muted); display: block; font-size: 9px; }
 .metric-card strong { display: block; font-family: var(--font-geist-mono), monospace; font-size: clamp(15px, 1.35vw, 20px); margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.chart-panel { min-height: 392px; padding: 18px 18px 12px; }
+.chart-panel { min-height: 432px; padding: 18px 18px 12px; }
 
 .chart-header {
   align-items: center;
@@ -557,23 +557,32 @@ h2 small {
 
 .legend { color: var(--muted); font-size: 9px; }
 .strategy-line, .benchmark-line { display: inline-block; height: 2px; margin: 0 5px 3px 10px; width: 17px; }
-.benchmark-line { background: repeating-linear-gradient(90deg, #6c778a 0 3px, transparent 3px 5px); }
+.strategy-line { background: #f4f8ff; box-shadow: 0 0 6px rgba(142, 202, 255, .85); height: 3px; }
+.benchmark-line { background: repeating-linear-gradient(90deg, #f3c84b 0 4px, transparent 4px 6px); }
 .legend-buy,
 .legend-sell {
   border-radius: 3px;
-  color: #071018;
   display: inline-flex;
-  font-size: 8px;
   font-style: normal;
-  font-weight: 700;
-  height: 15px;
+  height: 16px;
   justify-content: center;
-  line-height: 15px;
   margin-left: 9px;
-  width: 15px;
+  position: relative;
+  vertical-align: middle;
+  width: 16px;
 }
 .legend-buy { background: var(--red); }
 .legend-sell { background: var(--green); margin-left: 4px; }
+.legend-buy::after,
+.legend-sell::after {
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  content: "";
+  left: 4px;
+  position: absolute;
+}
+.legend-buy::after { border-bottom: 7px solid #071018; top: 4px; }
+.legend-sell::after { border-top: 7px solid #071018; bottom: 4px; }
 
 .periods {
   background: #090e15;
@@ -595,7 +604,7 @@ h2 small {
 
 .periods button.active { background: #1c2c47; color: #8db6ff; }
 
-.chart-canvas { height: 240px; margin-top: 14px; width: 100%; }
+.chart-canvas { height: 280px; margin-top: 14px; width: 100%; }
 .chart-canvas canvas { display: block; }
 
 .chart-summary {
