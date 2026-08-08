@@ -18,6 +18,13 @@ type Strategy = {
   color: string;
 };
 
+type StockSearchResult = {
+  symbol: string;
+  code: string;
+  name: string;
+  exchange: string;
+};
+
 type Kline = {
   timestamp: number;
   open: number;
@@ -59,20 +66,6 @@ const emptyBacktest: BacktestResult = {
 
 const initialWatchlist: WatchItem[] = [
   { code: "601939", name: "建设银行", price: 0, change: 0, signal: "同步中" },
-];
-
-const candidates: WatchItem[] = [
-  { code: "601939", name: "建设银行", price: 0, change: 0, signal: "同步中" },
-  { code: "600519", name: "贵州茅台", price: 0, change: 0, signal: "待加载" },
-  { code: "300750", name: "宁德时代", price: 0, change: 0, signal: "待加载" },
-  { code: "300308", name: "中际旭创", price: 0, change: 0, signal: "待加载" },
-  { code: "600036", name: "招商银行", price: 0, change: 0, signal: "待加载" },
-  { code: "603259", name: "药明康德", price: 0, change: 0, signal: "待加载" },
-  { code: "601318", name: "中国平安", price: 0, change: 0, signal: "待加载" },
-  { code: "000858", name: "五粮液", price: 0, change: 0, signal: "待加载" },
-  { code: "002594", name: "比亚迪", price: 0, change: 0, signal: "待加载" },
-  { code: "688981", name: "中芯国际", price: 0, change: 0, signal: "待加载" },
-  { code: "600900", name: "长江电力", price: 0, change: 0, signal: "待加载" },
 ];
 
 const strategies: Strategy[] = [
@@ -402,12 +395,15 @@ export default function Home() {
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy>(strategies[0]);
   const [period, setPeriod] = useState("近6月");
   const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
+  const [searchStatus, setSearchStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [showSearch, setShowSearch] = useState(false);
   const [position, setPosition] = useState(30);
   const [stopLoss, setStopLoss] = useState(8);
   const [takeProfit, setTakeProfit] = useState(22);
   const [autoRebalance, setAutoRebalance] = useState(true);
   const [initialCapital, setInitialCapital] = useState(1_000_000);
+  const [capitalInput, setCapitalInput] = useState("1000000");
   const [series, setSeries] = useState<Record<string, Kline[]>>({});
   const [dataStatus, setDataStatus] = useState<"loading" | "ready" | "error">("loading");
   const [refreshTick, setRefreshTick] = useState(0);
@@ -423,7 +419,10 @@ export default function Home() {
       catch { window.localStorage.removeItem("paper-alpha-watchlist-v2"); }
     }
     const storedCapital = Number(window.localStorage.getItem("paper-alpha-capital"));
-    if (storedCapital >= 100_000) setInitialCapital(storedCapital);
+    if (storedCapital >= 100_000) {
+      setInitialCapital(storedCapital);
+      setCapitalInput(String(storedCapital));
+    }
   }, []);
 
   useEffect(() => { window.localStorage.setItem("paper-alpha-watchlist-v2", JSON.stringify(watchlist)); }, [watchlist]);
@@ -490,10 +489,38 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [running, selectedStrategy.name]);
 
-  const filteredCandidates = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    return candidates.filter((item) => !watchlist.some((watch) => watch.code === item.code) && (!keyword || item.code.includes(keyword) || item.name.includes(keyword)));
-  }, [search, watchlist]);
+  useEffect(() => {
+    const query = search.trim();
+    if (!showSearch || !query) {
+      setSearchResults([]);
+      setSearchStatus("idle");
+      return;
+    }
+
+    const controller = new AbortController();
+    setSearchStatus("loading");
+    const timer = window.setTimeout(() => {
+      fetch(`/api/tickflow/search?q=${encodeURIComponent(query)}`, { signal: controller.signal })
+        .then(async (response) => {
+          if (!response.ok) throw new Error("search failed");
+          return response.json() as Promise<{ results: StockSearchResult[] }>;
+        })
+        .then((payload) => {
+          setSearchResults(payload.results.filter((item) => !watchlist.some((watch) => watch.code === item.code)));
+          setSearchStatus("ready");
+        })
+        .catch((error) => {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          setSearchResults([]);
+          setSearchStatus("error");
+        });
+    }, 320);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [search, showSearch, watchlist]);
 
   const selectedSymbol = toSymbol(selectedStock || "601939");
   const allBars = series[selectedSymbol] ?? [];
@@ -507,8 +534,8 @@ export default function Home() {
   const latestBar = allBars.at(-1);
   const recentTrades = backtest.trades.slice(-3).reverse();
 
-  const addStock = (stock: WatchItem) => {
-    setWatchlist((items) => [...items, stock]);
+  const addStock = (stock: StockSearchResult) => {
+    setWatchlist((items) => [...items, { code: stock.code, name: stock.name, price: 0, change: 0, signal: "同步中" }]);
     setSelectedStock(stock.code);
     setSearch(""); setShowSearch(false); setToast(`${stock.name}已加入自选，正在读取真实日K`);
   };
@@ -527,6 +554,25 @@ export default function Home() {
     setProgress(0); setRunning(true);
   };
 
+  const editCapital = (rawValue: string) => {
+    const digits = rawValue.replace(/[^0-9]/g, "");
+    setCapitalInput(digits);
+    const value = Number(digits);
+    if (value >= 100_000) setInitialCapital(value);
+  };
+
+  const commitCapital = () => {
+    const value = Number(capitalInput);
+    if (!Number.isFinite(value) || value < 100_000) {
+      setCapitalInput(String(initialCapital));
+      setToast("初始本金最低为 10 万元");
+      return;
+    }
+    const normalized = Math.round(value);
+    setInitialCapital(normalized);
+    setCapitalInput(String(normalized));
+  };
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -543,7 +589,7 @@ export default function Home() {
       <div className="workspace">
         <aside className="watch-panel panel">
           <div className="panel-heading"><div><span className="eyebrow">WATCHLIST</span><h2>自选股 <small>{watchlist.length}</small></h2></div><button className="add-button" onClick={() => setShowSearch((value) => !value)} aria-expanded={showSearch}>＋</button></div>
-          {showSearch && <div className="stock-search"><label htmlFor="stock-search">添加股票</label><input id="stock-search" autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="输入代码或名称" /><div className="search-results">{filteredCandidates.slice(0, 5).map((stock) => <button key={stock.code} onClick={() => addStock(stock)}><span>{stock.name}<small>{stock.code}</small></span><b>＋</b></button>)}{filteredCandidates.length === 0 && <p>没有更多匹配股票</p>}</div></div>}
+          {showSearch && <div className="stock-search"><label htmlFor="stock-search">联网搜索 A 股</label><div className="search-input-wrap"><input id="stock-search" autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="输入股票代码或名称" /><i className={searchStatus === "loading" ? "search-spinner" : "search-cloud"}>{searchStatus === "loading" ? "" : "⌁"}</i></div><div className="search-results">{searchResults.map((stock) => <button key={stock.symbol} onClick={() => addStock(stock)}><span>{stock.name}<small>{stock.symbol}</small></span><b>＋</b></button>)}{searchStatus === "idle" && <p>输入关键词后通过 TickFlow 联网查询</p>}{searchStatus === "loading" && <p>正在联网搜索…</p>}{searchStatus === "ready" && searchResults.length === 0 && <p>没有找到匹配的 A 股</p>}{searchStatus === "error" && <p className="search-error">联网搜索暂时不可用，请重试</p>}</div></div>}
           <div className="watch-list">{watchlist.map((stock) => <button key={stock.code} className={`watch-row ${selectedStock === stock.code ? "active" : ""}`} onClick={() => setSelectedStock(stock.code)}><span className="stock-identity"><b>{stock.name}</b><small>{toSymbol(stock.code)}</small></span><span className="stock-quote"><b>{stock.price ? stock.price.toFixed(2) : "—"}</b><small className={stock.change >= 0 ? "up" : "down"}>{stock.price ? `${stock.change >= 0 ? "+" : ""}${stock.change.toFixed(2)}%` : "读取中"}</small></span><span className={`signal signal-${stock.signal}`}>{stock.signal}</span><span className="remove-stock" role="button" aria-label={`移除${stock.name}`} onClick={(event) => { event.stopPropagation(); removeStock(stock.code); }}>×</span></button>)}</div>
           <div className="watch-footer"><div><span>数据源</span><b>TickFlow</b></div><div><span>历史日K</span><b>{allBars.length || "—"} 根</b></div><button onClick={() => setRefreshTick((value) => value + 1)}>↻ 同步最新日K</button></div>
         </aside>
@@ -571,7 +617,7 @@ export default function Home() {
           <section className="strategy-panel panel">
             <div className="panel-heading compact"><div><span className="eyebrow">STRATEGY</span><h2>策略引擎</h2></div><button className="more-button" aria-label="策略设置">•••</button></div>
             <div className="strategy-list">{strategies.map((strategy) => <button key={strategy.id} className={`strategy-card ${selectedStrategy.id === strategy.id ? "active" : ""}`} onClick={() => setSelectedStrategy(strategy)} style={{ "--strategy-color": strategy.color } as CSSProperties}><span className="strategy-radio"><i /></span><span><b>{strategy.name}</b><small>{strategy.summary}</small></span><em>{strategy.tag}</em></button>)}</div>
-            <div className="capital-config"><div className="section-label"><b>模拟账户资金</b><span>仅用于虚拟撮合</span></div><label htmlFor="initial-capital">初始本金</label><div className="capital-input"><i>¥</i><input id="initial-capital" type="number" min="100000" step="10000" value={initialCapital} onChange={(event) => setInitialCapital(Math.max(100_000, Number(event.target.value) || 100_000))} /></div><div className="capital-presets">{[100_000, 500_000, 1_000_000, 5_000_000].map((amount) => <button key={amount} className={initialCapital === amount ? "active" : ""} onClick={() => setInitialCapital(amount)}>{amount / 10_000}万</button>)}</div></div>
+            <div className="capital-config"><div className="section-label"><b>模拟账户资金</b><span>最低 10 万元</span></div><label htmlFor="initial-capital">初始本金</label><div className="capital-input"><i>¥</i><input id="initial-capital" type="text" inputMode="numeric" value={capitalInput} onChange={(event) => editCapital(event.target.value)} onBlur={commitCapital} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} aria-describedby="capital-hint" /></div><small id="capital-hint" className="capital-hint">输入金额后按回车或点击空白处应用</small><div className="capital-presets">{[100_000, 500_000, 1_000_000, 5_000_000].map((amount) => <button key={amount} className={initialCapital === amount ? "active" : ""} onClick={() => { setInitialCapital(amount); setCapitalInput(String(amount)); }}>{amount / 10_000}万</button>)}</div></div>
             <div className="parameters"><div className="section-label"><b>执行参数</b><button onClick={() => { setPosition(30); setStopLoss(8); setTakeProfit(22); }}>恢复默认</button></div><label><span>单票仓位 <b>{position}%</b></span><input type="range" min="10" max="100" step="5" value={position} onChange={(event) => setPosition(Number(event.target.value))} /></label><div className="parameter-pair"><label><span>止损线</span><div><input type="number" min="1" max="20" value={stopLoss} onChange={(event) => setStopLoss(Number(event.target.value))} /><i>%</i></div></label><label><span>止盈线</span><div><input type="number" min="5" max="50" value={takeProfit} onChange={(event) => setTakeProfit(Number(event.target.value))} /><i>%</i></div></label></div><button className={`toggle-row ${autoRebalance ? "on" : ""}`} onClick={() => setAutoRebalance((value) => !value)} aria-pressed={autoRebalance}><span><b>收盘后自动调仓</b><small>新日K到达后检查信号</small></span><i><em /></i></button></div>
             <div className="execution-flow"><div className="section-label"><b>数据与执行流程</b><span>{dataStatus === "ready" ? "4 / 4 就绪" : "同步中"}</span></div><ol><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "1"}</i><span><b>读取 TickFlow 日K</b><small>{allBars.length || "—"} 根 · 前复权 · 真实历史数据</small></span></li><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "2"}</i><span><b>计算策略信号</b><small>{selectedStrategy.name} · 仅使用OHLCV</small></span></li><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "3"}</i><span><b>风控检查</b><small>仓位 / 止损 / 止盈</small></span></li><li className="ready"><i>4</i><span><b>虚拟撮合</b><small>佣金 0.025% · 滑点 0.1%</small></span></li></ol></div>
             <button className={`run-button ${running ? "running" : ""}`} onClick={runSimulation} disabled={running || dataStatus === "error"}><span>{running ? `正在计算真实日K ${progress}%` : "▶ 同步并运行回测"}</span><i style={{ width: `${progress}%` }} /></button><p className="run-note">已运行 {runCount} 次 · TickFlow 免费版非实时 · 不会产生真实交易</p>

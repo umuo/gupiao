@@ -319,6 +319,39 @@ h2 small {
   width: 100%;
 }
 
+.search-input-wrap {
+  position: relative;
+}
+
+.search-input-wrap input {
+  padding-right: 34px;
+}
+
+.search-cloud,
+.search-spinner {
+  color: #6f8fbe;
+  font-size: 14px;
+  font-style: normal;
+  height: 16px;
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: 16px;
+}
+
+.search-spinner {
+  animation: search-spin .75s linear infinite;
+  border: 2px solid rgba(111, 143, 190, .25);
+  border-radius: 50%;
+  border-top-color: #79a9ff;
+}
+
+.search-error { color: #ff7e8d !important; }
+
+@keyframes search-spin {
+  to { transform: rotate(360deg); }
+}
+
 .search-results {
   display: grid;
   gap: 4px;
@@ -749,6 +782,13 @@ td small { color: #5f6d83; display: block; font-family: var(--font-geist-mono), 
 
 .capital-input input::-webkit-inner-spin-button,
 .capital-input input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+
+.capital-hint {
+  color: #59677d;
+  display: block;
+  font-size: 8px;
+  margin-top: 6px;
+}
 
 .capital-presets {
   display: grid;
