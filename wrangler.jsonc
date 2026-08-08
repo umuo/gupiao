@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gupiao",
+  "account_id": "1700482cc27f5d859052e3d77374ee3a",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "no_bundle": true,
+  "rules": [
+    {
+      "type": "ESModule",
+      "globs": ["**/*.js", "**/*.mjs"]
+    }
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "dist/client"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gupiao-db",
+      "database_id": "1eb75fbd-d737-45aa-aac4-625a1663a96a",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}
