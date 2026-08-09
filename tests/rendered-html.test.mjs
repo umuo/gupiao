@@ -115,6 +115,7 @@ test("persists paper accounts and keeps simulated execution independent from not
   assert.match(refreshRoute, /fetchTickFlowKlines/);
   assert.match(service, /executePaperSignal/);
   assert.match(service, /db\.batch/);
+  assert.match(runner, /refreshPaperAccountValuation/);
   assert.ok(runner.indexOf("executePaperSignal") < runner.indexOf("deliverNotification(channel"));
   assert.doesNotMatch(runner, /所有通知渠道均投递失败/);
   assert.match(center, /更新今日收益/);

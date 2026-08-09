@@ -3,7 +3,7 @@ import { getDb } from "../db";
 import { automationNotificationChannels, automations, notificationChannels, notificationLogs, userSettings } from "../db/schema";
 import { deliverNotification } from "./notification-delivery";
 import { decryptSecret } from "./secret-box";
-import { executePaperSignal, paperAccountState, paperStrategyFrom } from "./paper-account-service";
+import { executePaperSignal, paperAccountState, paperStrategyFrom, refreshPaperAccountValuation, shanghaiDate } from "./paper-account-service";
 import { signalFor, type Kline, type SignalStrategy } from "./strategy-engine";
 import { fetchTickFlowKlines, fetchTickFlowQuote } from "./tickflow-client";
 
@@ -152,6 +152,9 @@ export async function runAutomation(row: AutomationRow) {
 
   const bar = bars.at(-1);
   if (!bar || bars.length < 22) throw new Error("可用K线不足，暂时无法计算策略");
+  if (paperState && row.paperAccountId) {
+    await refreshPaperAccountValuation(row.paperAccountId, row.userId, bar.close, shanghaiDate(new Date(bar.timestamp)));
+  }
   const strategy = paperState ? paperStrategyFrom(paperState.account) : strategyFrom(row);
   const isHolding = paperState ? Boolean(paperState.position) : row.positionState === "holding";
   const entryPrice = paperState?.position?.averageCost ?? row.entryPrice;
