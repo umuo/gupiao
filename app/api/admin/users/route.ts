@@ -1,16 +1,36 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { users } from "../../../../db/schema";
+import {
+  automationNotificationChannels,
+  automations,
+  customStrategies,
+  notificationChannels,
+  notificationLogs,
+  paperAccounts,
+  paperEquitySnapshots,
+  paperPositions,
+  paperTrades,
+  sessions,
+  users,
+  userSettings,
+} from "../../../../db/schema";
 import { getAppUser, hashPassword, normalizeEmail, validateEmail } from "../../../auth";
 
-function userView(row: typeof users.$inferSelect) {
+function userView(row: typeof users.$inferSelect, currentUserId?: string) {
   return {
     id: row.id,
     displayName: row.displayName,
     email: row.email,
     role: row.role,
     createdAt: row.createdAt,
+    isCurrent: row.id === currentUserId,
   };
+}
+
+function errorResponse(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+  const duplicate = message.includes("UNIQUE") || message.toLowerCase().includes("unique");
+  return Response.json({ error: duplicate ? "该邮箱已存在" : message }, { status: duplicate ? 409 : 400 });
 }
 
 export async function GET(request: Request) {
@@ -18,7 +38,7 @@ export async function GET(request: Request) {
   if (!admin) return Response.json({ error: "请先登录" }, { status: 401 });
   if (admin.role !== "superadmin") return Response.json({ error: "仅超级管理员可以管理用户" }, { status: 403 });
   const rows = await getDb().select().from(users).orderBy(desc(users.createdAt)).limit(200);
-  return Response.json({ users: rows.map(userView) });
+  return Response.json({ users: rows.map((row) => userView(row, admin.userId)) });
 }
 
 export async function POST(request: Request) {
@@ -44,8 +64,77 @@ export async function POST(request: Request) {
       passwordHash: passwordResult.hash,
       passwordSalt: passwordResult.salt,
     }).returning();
-    return Response.json({ user: userView(row) }, { status: 201 });
+    return Response.json({ user: userView(row, admin.userId) }, { status: 201 });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "创建用户失败" }, { status: 400 });
+    return errorResponse(error, "创建用户失败");
+  }
+}
+
+export async function PATCH(request: Request) {
+  const admin = await getAppUser(request);
+  if (!admin) return Response.json({ error: "请先登录" }, { status: 401 });
+  if (admin.role !== "superadmin") return Response.json({ error: "仅超级管理员可以编辑用户" }, { status: 403 });
+  try {
+    const payload = await request.json() as { id?: string; displayName?: string; email?: string; password?: string };
+    const id = String(payload.id ?? "");
+    const [existing] = await getDb().select().from(users).where(eq(users.id, id)).limit(1);
+    if (!existing) return Response.json({ error: "用户不存在" }, { status: 404 });
+    if (existing.role === "superadmin") return Response.json({ error: "超级管理员账号受保护，不能在用户管理中修改" }, { status: 400 });
+
+    const displayName = String(payload.displayName ?? existing.displayName).trim().slice(0, 40);
+    const email = normalizeEmail(String(payload.email ?? existing.email));
+    const password = String(payload.password ?? "");
+    if (!displayName) throw new Error("请填写用户昵称");
+    if (!validateEmail(email)) throw new Error("请输入有效邮箱");
+    if (password && (password.length < 8 || password.length > 128)) throw new Error("新密码需要8到128位");
+    const [duplicate] = await getDb().select({ id: users.id }).from(users).where(and(eq(users.email, email), ne(users.id, id))).limit(1);
+    if (duplicate) return Response.json({ error: "该邮箱已存在" }, { status: 409 });
+
+    const changes: Partial<typeof users.$inferInsert> = { displayName, email };
+    if (password) {
+      const passwordResult = await hashPassword(password);
+      changes.passwordHash = passwordResult.hash;
+      changes.passwordSalt = passwordResult.salt;
+    }
+    const db = getDb();
+    const [row] = await db.update(users).set(changes).where(eq(users.id, id)).returning();
+    if (password) await db.delete(sessions).where(eq(sessions.userId, id));
+    return Response.json({ user: userView(row, admin.userId), sessionsRevoked: Boolean(password) });
+  } catch (error) {
+    return errorResponse(error, "更新用户失败");
+  }
+}
+
+export async function DELETE(request: Request) {
+  const admin = await getAppUser(request);
+  if (!admin) return Response.json({ error: "请先登录" }, { status: 401 });
+  if (admin.role !== "superadmin") return Response.json({ error: "仅超级管理员可以删除用户" }, { status: 403 });
+  try {
+    const payload = await request.json() as { id?: string };
+    const id = String(payload.id ?? "");
+    if (!id) throw new Error("缺少用户 ID");
+    if (id === admin.userId) throw new Error("不能删除当前登录的管理员账号");
+    const [existing] = await getDb().select().from(users).where(eq(users.id, id)).limit(1);
+    if (!existing) return Response.json({ error: "用户不存在" }, { status: 404 });
+    if (existing.role === "superadmin") throw new Error("超级管理员账号受保护，不能删除");
+
+    const db = getDb();
+    await db.batch([
+      db.delete(automationNotificationChannels).where(eq(automationNotificationChannels.userId, id)),
+      db.delete(notificationLogs).where(eq(notificationLogs.userId, id)),
+      db.delete(paperTrades).where(eq(paperTrades.userId, id)),
+      db.delete(paperPositions).where(eq(paperPositions.userId, id)),
+      db.delete(paperEquitySnapshots).where(eq(paperEquitySnapshots.userId, id)),
+      db.delete(automations).where(eq(automations.userId, id)),
+      db.delete(notificationChannels).where(eq(notificationChannels.userId, id)),
+      db.delete(paperAccounts).where(eq(paperAccounts.userId, id)),
+      db.delete(customStrategies).where(eq(customStrategies.userId, id)),
+      db.delete(userSettings).where(eq(userSettings.userId, id)),
+      db.delete(sessions).where(eq(sessions.userId, id)),
+      db.delete(users).where(eq(users.id, id)),
+    ]);
+    return Response.json({ ok: true, deletedUser: { id, displayName: existing.displayName } });
+  } catch (error) {
+    return errorResponse(error, "删除用户失败");
   }
 }

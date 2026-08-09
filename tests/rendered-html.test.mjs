@@ -36,12 +36,13 @@ test("builds the strategy automation and realtime configuration surfaces", async
 });
 
 test("keeps public registration closed and initializes the administrator securely", async () => {
-  const [authGate, auth, loginCrypto, loginRoute, adminUsersRoute] = await Promise.all([
+  const [authGate, auth, loginCrypto, loginRoute, adminUsersRoute, userManagement] = await Promise.all([
     read("app/auth-gate.tsx"),
     read("app/auth.ts"),
     read("app/login-crypto.ts"),
     read("app/api/auth/login/route.ts"),
     read("app/api/admin/users/route.ts"),
+    read("app/user-management.tsx"),
   ]);
   assert.match(authGate, /系统已关闭公开注册/);
   assert.doesNotMatch(authGate, /api\/auth\/register/);
@@ -57,6 +58,15 @@ test("keeps public registration closed and initializes the administrator securel
   assert.doesNotMatch(loginRoute, /payload\.password/);
   assert.match(adminUsersRoute, /admin\.role !== "superadmin"/);
   assert.match(adminUsersRoute, /role: "user"/);
+  assert.match(adminUsersRoute, /export async function PATCH/);
+  assert.match(adminUsersRoute, /export async function DELETE/);
+  assert.match(adminUsersRoute, /超级管理员账号受保护/);
+  assert.match(adminUsersRoute, /db\.batch/);
+  assert.match(adminUsersRoute, /paperAccounts/);
+  assert.match(adminUsersRoute, /notificationChannels/);
+  assert.match(userManagement, /查找用户/);
+  assert.match(userManagement, /重置密码（可选）/);
+  assert.match(userManagement, /永久删除/);
 });
 
 test("keeps TickFlow credentials protected and persists notification state", async () => {
