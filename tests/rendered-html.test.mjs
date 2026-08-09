@@ -125,3 +125,19 @@ test("persists paper accounts and keeps simulated execution independent from not
   assert.match(page, /我的模拟盘/);
   assert.match(page, /临时回测资金/);
 });
+
+test("keeps every product surface reachable and usable on mobile", async () => {
+  const [page, layout, styles] = await Promise.all([
+    read("app/page.tsx"),
+    read("app/layout.tsx"),
+    read("app/globals.css"),
+  ]);
+  assert.match(page, /mobile-nav/);
+  assert.match(page, /手机端主导航/);
+  assert.match(page, /onPointerDown=\{handlePointerMove\}/);
+  assert.match(layout, /viewportFit: "cover"/);
+  assert.match(styles, /env\(safe-area-inset-bottom\)/);
+  assert.match(styles, /height: 100dvh/);
+  assert.match(styles, /\.notification-row/);
+  assert.match(styles, /\.managed-user-list article/);
+});

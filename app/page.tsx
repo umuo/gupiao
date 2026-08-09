@@ -380,10 +380,11 @@ function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }
   return <>
     <canvas
       ref={ref}
-      aria-label="真实历史日K收盘价与MA20均线；可使用鼠标或左右方向键查看具体价格"
+      aria-label="真实历史日K收盘价与MA20均线；可点击、触摸、使用鼠标或左右方向键查看具体价格"
       onBlur={() => setHover(null)}
       onFocus={(event) => { if (bars.length) setHover(hoverForIndex(bars.length - 1, event.currentTarget.getBoundingClientRect().width)); }}
       onKeyDown={handleKeyDown}
+      onPointerDown={handlePointerMove}
       onPointerLeave={() => setHover(null)}
       onPointerMove={handlePointerMove}
       tabIndex={0}
@@ -717,6 +718,14 @@ export default function Home() {
           <section className="activity-panel panel"><div className="panel-heading compact"><div><span className="eyebrow">REAL KLINE ACTIVITY</span><h2>策略成交日志</h2></div><i className={dataStatus === "ready" ? "live-dot" : "demo-dot"} /></div><div className="activity-list">{recentTrades.length ? recentTrades.map((trade) => <div className="activity-item" key={`${trade.index}-${trade.action}`}><time>{trade.date}</time><span className={trade.action === "buy" ? "buy" : "sell"}>{trade.action === "buy" ? "买入" : "卖出"}</span><p><b>{selectedItem?.name}</b><small>{trade.price.toFixed(2)} × {trade.shares.toLocaleString("zh-CN")}</small><em>{trade.reason}</em></p></div>) : <p className="activity-empty">当前区间内没有产生策略成交</p>}</div><button className="text-button" onClick={() => setToast(`当前区间共 ${backtest.trades.length} 笔真实日K模拟成交`)}>查看计算结果 →</button></section>
         </aside>
       </div>
+      <nav className="mobile-nav" aria-label="手机端主导航">
+        <button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><i>⌂</i><span>首页</span></button>
+        <button className={showPaperAccounts ? "active" : ""} onClick={() => setShowPaperAccounts(true)}><i>◎</i><span>模拟盘</span></button>
+        <button className={studioMode ? "active" : ""} onClick={() => setStudioMode("manual")}><i>∑</i><span>策略</span></button>
+        <button className={showAutomation ? "active" : ""} onClick={() => { setTaskTarget(null); setShowAutomation(true); }}><i>◴</i><span>任务</span></button>
+        <button className={showNotifications ? "active" : ""} onClick={() => setShowNotifications(true)}><i>⌁</i><span>通知</span></button>
+        <button className={showAccount ? "active" : ""} onClick={() => setShowAccount((value) => !value)}><i>{viewerInitials}</i><span>我的</span></button>
+      </nav>
       <StrategyStudio mode={studioMode} strategies={allStrategies} aiSettings={aiSettings} onAiSettingsChange={setAiSettings} onCreated={handleStrategyCreated} onDeleted={handleStrategyDeleted} onClose={() => setStudioMode(null)} />
       <PaperAccountCenter open={showPaperAccounts} watchlist={watchlist} strategies={allStrategies} onClose={() => setShowPaperAccounts(false)} onToast={setToast} onConfigureTask={(target) => { setShowPaperAccounts(false); setTaskTarget(target); setShowAutomation(true); }} />
       <TaskCenter open={showAutomation} watchlist={watchlist} strategies={allStrategies} defaultStopLoss={stopLoss} defaultTakeProfit={takeProfit} targetAccount={taskTarget} onClose={() => { setShowAutomation(false); setTaskTarget(null); }} onToast={setToast} onOpenNotifications={() => { setShowAutomation(false); setShowNotifications(true); }} onTaskChanged={() => undefined} />

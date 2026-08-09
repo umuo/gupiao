@@ -943,6 +943,8 @@ input[type="range"] {
 
 .toast i { align-items: center; background: rgba(55, 214, 170, .16); border-radius: 50%; color: var(--green); display: flex; font-size: 8px; font-style: normal; height: 17px; justify-content: center; width: 17px; }
 
+.mobile-nav { display: none; }
+
 .account-wrap { position: relative; }
 .account-button { cursor: pointer; }
 .account-popover {
@@ -1456,6 +1458,286 @@ input[type="range"] {
   .paper-trade-list em { display: none; }
   .paper-form-overlay { position: fixed; }
   .paper-form-grid, .paper-risk-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 580px) {
+  html { scroll-padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  body { overflow-x: hidden; }
+  .app-shell { padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
+
+  .topbar {
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 0 10px;
+  }
+  .brand { gap: 8px; min-width: 0; }
+  .brand-mark { border-radius: 8px; height: 34px; padding: 7px; width: 34px; }
+  .brand b { font-size: 12px; }
+  .brand small { font-size: 9px; }
+  .top-actions { gap: 6px; }
+  .account-button { min-height: 44px; padding: 5px; }
+  .account-button > i { height: 32px; width: 32px; }
+
+  .mobile-nav {
+    align-items: stretch;
+    background: rgba(9, 14, 22, .97);
+    border-top: 1px solid #26344a;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    left: 0;
+    padding: 5px 4px calc(5px + env(safe-area-inset-bottom));
+    position: fixed;
+    right: 0;
+    z-index: 70;
+    backdrop-filter: blur(18px);
+  }
+  .mobile-nav button {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    color: #718096;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    justify-content: center;
+    min-height: 50px;
+    min-width: 0;
+    padding: 4px 1px;
+  }
+  .mobile-nav button.active { background: rgba(76, 141, 255, .1); color: #9cc0ff; }
+  .mobile-nav i { font-size: 16px; font-style: normal; line-height: 1; }
+  .mobile-nav button:last-child i { align-items: center; background: #1a2a43; border-radius: 50%; display: flex; font-size: 8px; height: 20px; justify-content: center; width: 20px; }
+  .mobile-nav span { font-size: 9px; line-height: 1; white-space: nowrap; }
+
+  .account-popover {
+    bottom: calc(70px + env(safe-area-inset-bottom));
+    left: 10px;
+    max-height: calc(100dvh - 92px - env(safe-area-inset-bottom));
+    min-width: 0;
+    overflow-y: auto;
+    padding: 17px;
+    right: 10px;
+    top: auto;
+  }
+  .account-popover > button { font-size: 13px; min-height: 44px; padding: 10px 4px; }
+  .account-popover > b { font-size: 16px; }
+  .account-popover > small, .account-popover > div { font-size: 11px; }
+
+  .workspace { gap: 10px; padding: 8px 8px 14px; }
+  .panel { border-radius: 10px; }
+  .panel-heading { padding: 14px; }
+  .panel-heading h2, .chart-header h2, .table-header h2 { font-size: 15px; }
+  .add-button, .more-button { height: 44px; width: 44px; }
+  .watch-list { max-height: 310px; padding: 7px; }
+  .watch-row { min-height: 72px; padding: 11px 46px 11px 11px; }
+  .stock-identity b { font-size: 14px; }
+  .stock-identity small, .stock-quote small { font-size: 10px; }
+  .stock-quote b { font-size: 13px; }
+  .remove-stock { align-items: center; display: flex; height: 44px; justify-content: center; opacity: 1; right: 2px; top: 4px; width: 40px; }
+  .search-results button { min-height: 44px; }
+  .watch-footer button { min-height: 44px; }
+
+  .hero { min-height: 0; padding: 17px; }
+  .hero h1 { font-size: 23px; }
+  .hero p { font-size: 11px; }
+  .hero-meta { gap: 6px; }
+  .hero-meta div { min-width: 0; padding: 10px; }
+  .hero-meta b { font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .metric-card { padding: 13px; }
+  .metric-card span { font-size: 10px; }
+  .metric-card strong { font-size: 17px; }
+
+  .chart-panel { min-height: 390px; padding: 14px 12px 10px; }
+  .chart-canvas { height: 245px; margin-top: 9px; }
+  .chart-canvas canvas { touch-action: pan-y; }
+  .chart-tooltip { max-width: calc(100% - 16px); min-width: 128px; padding: 9px; }
+  .chart-tooltip time { font-size: 9px; }
+  .chart-tooltip span { font-size: 10px; }
+  .chart-tooltip b { font-size: 11px; }
+  .periods button { min-height: 40px; padding: 7px 5px; }
+  .chart-summary span { font-size: 9px; }
+  .chart-summary b { font-size: 11px; }
+  .table-scroll { -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+  table { min-width: 620px; }
+  th, td { padding: 11px 12px; }
+
+  .strategy-tools button { font-size: 10px; height: 40px; min-width: 40px; }
+  .strategy-card { min-height: 58px; padding: 11px; }
+  .strategy-card b { font-size: 12px; }
+  .strategy-card small { font-size: 9px; }
+  .capital-presets button { min-height: 40px; }
+  .capital-input input, .parameter-pair input { font-size: 16px; }
+  input[type="range"] { height: 20px; margin-top: 5px; }
+  .toggle-row { min-height: 56px; }
+  .run-button { min-height: 48px; }
+  .text-button { min-height: 44px; }
+
+  .studio-backdrop { align-items: flex-start; overscroll-behavior: contain; }
+  .strategy-studio {
+    border: 0;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+    max-width: none;
+  }
+  .studio-header {
+    flex: 0 0 auto;
+    gap: 12px;
+    padding: max(15px, env(safe-area-inset-top)) 15px 14px;
+  }
+  .studio-header h2 { font-size: 19px; }
+  .studio-header p { font-size: 11px; line-height: 1.5; }
+  .studio-header > button { flex: 0 0 auto; height: 44px; width: 44px; }
+  .studio-body {
+    flex: 1 1 auto;
+    max-height: none;
+    min-height: 0;
+    overscroll-behavior: contain;
+    padding: 15px 13px calc(18px + env(safe-area-inset-bottom));
+  }
+  .studio-builder input, .studio-builder textarea, .ai-creator input, .ai-creator textarea, .settings-form input,
+  .automation-form input, .automation-form select, .notification-config-form input, .notification-config-form select,
+  .notification-config-form textarea, .tickflow-settings input, .user-create-form input,
+  .paper-form-card input, .paper-form-card select, .paper-form-card textarea,
+  .rule-section select, .rule-row input, .auth-gate form input { font-size: 16px; min-height: 46px; }
+
+  .strategy-basics { gap: 10px; }
+  .rule-section { padding: 11px; }
+  .rule-section-title { align-items: flex-start; flex-wrap: wrap; }
+  .rule-section-title > select { min-height: 42px; }
+  .rule-row { align-items: start; background: #0d141f; border: 1px solid #202d40; border-radius: 8px; grid-template-columns: 28px minmax(0, 1fr); padding: 9px; }
+  .rule-number { grid-row: 1 / span 6; height: 24px; width: 24px; }
+  .rule-row select, .rule-row input { grid-column: 2; width: 100%; }
+  .remove-rule { grid-column: 2; grid-row: auto; height: 42px; justify-self: end; width: 42px; }
+  .add-rule { min-height: 44px; padding: 9px; }
+  .studio-actions button, .ai-generate-button, .primary-studio-button { min-height: 46px; }
+  .docs-list article { padding: 12px; }
+  .docs-list header button { min-height: 40px; min-width: 44px; }
+  .docs-intro > div { line-height: 1.7; }
+
+  .automation-tabs { flex: 0 0 auto; padding-top: 5px; }
+  .automation-tabs button { min-height: 44px; }
+  .automation-body { padding-top: 13px; }
+  .automation-layout, .notification-config-layout { gap: 12px; }
+  .automation-form, .automation-list-wrap, .notification-config-form, .tickflow-settings > section, .tickflow-settings > aside { padding: 12px; }
+  .automation-section-title h3 { font-size: 14px; }
+  .automation-section-title > button { min-height: 40px; min-width: 44px; }
+  .mode-switch button { min-height: 56px; }
+  .task-channel-picker > button, .notification-type-picker > button { min-height: 54px; }
+  .automation-list, .channel-list { max-height: none; overflow: visible; }
+  .automation-list article, .channel-list article { padding: 13px; }
+  .automation-list dl, .channel-list dl { gap: 10px 12px; }
+  .automation-list dt, .channel-list dt { font-size: 9px; }
+  .automation-list dd, .channel-list dd { font-size: 10px; }
+  .automation-list footer, .channel-list footer { flex-wrap: wrap; }
+  .automation-list footer button, .channel-list footer button { flex: 1 1 auto; font-size: 10px; min-height: 42px; padding: 8px; }
+  .automation-list footer button.danger, .channel-list footer button.danger { margin-left: 0; }
+  .task-toggle { height: 32px; min-height: 32px; padding: 3px; width: 52px; }
+  .task-toggle span { height: 26px; width: 26px; }
+  .task-toggle.on span { transform: translateX(20px); }
+  .task-card-channel-editor > div button, .template-variables button { font-size: 10px; min-height: 36px; padding: 8px; }
+  .tickflow-status { align-items: flex-start; padding: 13px; }
+  .tickflow-status > i { flex: 0 0 auto; }
+  .tickflow-status p, .tickflow-settings > section > p { font-size: 10px; }
+  .tickflow-actions { align-items: stretch; flex-direction: column; }
+  .tickflow-actions button { min-height: 46px; }
+  .header-row { grid-template-columns: minmax(0, 1fr) 44px; }
+  .header-row input:first-child { grid-column: 1 / -1; }
+  .header-row button { grid-column: 2; grid-row: 2; min-height: 44px; }
+  .message-template-field textarea { min-height: 210px; }
+
+  .notification-history { min-height: 0; }
+  .notification-table { border: 0; overflow: visible; }
+  .notification-head { display: none; }
+  .notification-row {
+    background: #0d141f;
+    border: 1px solid #253248;
+    border-radius: 9px;
+    gap: 8px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    margin-bottom: 9px;
+    min-width: 0;
+    padding: 12px;
+  }
+  .notification-row time { font-size: 9px; grid-column: 1 / -1; }
+  .notification-row > b { font-size: 9px; grid-column: 1; }
+  .notification-row > span { font-size: 11px; grid-column: 2; min-width: 0; }
+  .notification-row > p { font-size: 10px; grid-column: 1 / -1; line-height: 1.5; overflow: visible; white-space: normal; }
+  .notification-row > em { font-size: 9px; grid-column: 3; }
+
+  .user-management-layout { gap: 14px; }
+  .managed-user-list { max-height: none; }
+  .managed-user-list article { grid-template-columns: 36px minmax(0, 1fr) auto; padding: 12px 9px; }
+  .managed-user-list article > i { height: 36px; width: 36px; }
+  .managed-user-list article b { font-size: 11px; }
+  .managed-user-list article small { font-size: 9px; }
+  .managed-user-list article > span { font-size: 9px; }
+  .managed-user-list article time { grid-column: 2 / -1; text-align: left; }
+
+  .paper-account-studio { height: 100dvh; }
+  .paper-toolbar { flex: 0 0 auto; gap: 7px; padding: 9px 10px; }
+  .paper-toolbar > div { display: grid; gap: 6px; grid-template-columns: repeat(3, 1fr); margin: 0; order: 2; }
+  .paper-toolbar > div span { background: #0e1622; border-radius: 7px; padding: 8px; }
+  .paper-toolbar > div b { font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .paper-toolbar > button { flex: 1 1 calc(50% - 4px); font-size: 10px; min-height: 42px; }
+  .paper-layout { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+  .paper-list { max-height: 112px; scroll-snap-type: x proximity; }
+  .paper-list > button { flex-basis: min(78vw, 245px); min-height: 76px; scroll-snap-align: start; }
+  .paper-list > button b { font-size: 11px; }
+  .paper-list > button small, .paper-list > button > em { font-size: 9px; }
+  .paper-detail { height: calc(100% - 112px); max-height: none; padding: 12px; }
+  .paper-detail-header { align-items: flex-start; flex-direction: column; }
+  .paper-detail-header > div:last-child { flex-direction: row; width: 100%; }
+  .paper-detail-header button { flex: 1; font-size: 10px; min-height: 42px; }
+  .paper-metrics article { padding: 11px; }
+  .paper-metrics span, .paper-metrics small { font-size: 9px; }
+  .paper-metrics b { font-size: 13px; }
+  .paper-curve-card > div { height: 150px; }
+  .paper-info-grid section > header { align-items: flex-start; gap: 8px; }
+  .paper-info-grid section > header b { text-align: right; }
+  .paper-info-grid dt { font-size: 9px; }
+  .paper-info-grid dd { font-size: 10px; text-align: right; }
+  .paper-task-card > button { font-size: 11px; min-height: 44px; }
+  .paper-position-row { gap: 12px; }
+  .paper-position-row > span b { font-size: 11px; }
+  .paper-position-row > span small { font-size: 9px; }
+  .paper-trade-list > div { align-items: start; border: 1px solid #202d40; border-radius: 8px; gap: 7px; grid-template-columns: minmax(0, 1fr) auto; margin-top: 8px; padding: 10px; }
+  .paper-trade-list time { font-size: 9px; grid-column: 1; }
+  .paper-trade-list i { font-size: 9px; grid-column: 2; }
+  .paper-trade-list span { grid-column: 1 / -1; }
+  .paper-trade-list span b { font-size: 11px; }
+  .paper-trade-list span small { font-size: 9px; line-height: 1.45; overflow: visible; white-space: normal; }
+  .paper-trade-list em { display: block; font-size: 10px; grid-column: 1 / -1; text-align: left; }
+  .paper-form-overlay { align-items: flex-start; padding: 0; }
+  .paper-form-card { border: 0; border-radius: 0; height: 100dvh; max-height: 100dvh; padding: max(15px, env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom)); }
+  .paper-form-card > header button { height: 44px; width: 44px; }
+  .paper-form-card > footer { bottom: 0; position: sticky; }
+  .paper-form-card > footer button { flex: 1; font-size: 11px; min-height: 46px; }
+
+  .auth-gate { align-items: flex-start; padding: max(14px, env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom)); }
+  .auth-gate > section { border-radius: 13px; max-height: 100%; overflow-y: auto; padding: 20px 17px; }
+  .auth-gate h2 { font-size: 21px; }
+  .auth-gate > section > p { font-size: 11px; }
+  .auth-submit { min-height: 48px; }
+  .toast { bottom: calc(78px + env(safe-area-inset-bottom)); max-width: calc(100% - 24px); width: max-content; }
+}
+
+@media (max-height: 580px) and (pointer: coarse) {
+  .topbar { height: 62px; }
+  .icon-button { height: 44px; width: 44px; }
+  .studio-backdrop { align-items: flex-start; padding: 0; }
+  .strategy-studio { border: 0; border-radius: 0; display: flex; flex-direction: column; height: 100dvh; max-height: 100dvh; max-width: none; }
+  .studio-header { flex: 0 0 auto; padding: max(10px, env(safe-area-inset-top)) 14px 10px; }
+  .studio-body { flex: 1 1 auto; max-height: none; min-height: 0; padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+  .auth-gate { align-items: flex-start; padding: max(8px, env(safe-area-inset-top)) 12px calc(8px + env(safe-area-inset-bottom)); }
+  .auth-gate > section { max-height: 100%; overflow-y: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {
