@@ -1,7 +1,8 @@
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, count, desc, eq, like, ne, or } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import {
   automationNotificationChannels,
+  automationRuns,
   automations,
   customStrategies,
   notificationChannels,
@@ -11,6 +12,7 @@ import {
   paperPositions,
   paperTrades,
   sessions,
+  strategyVersions,
   users,
   userSettings,
 } from "../../../../db/schema";
@@ -37,8 +39,14 @@ export async function GET(request: Request) {
   const admin = await getAppUser(request);
   if (!admin) return Response.json({ error: "请先登录" }, { status: 401 });
   if (admin.role !== "superadmin") return Response.json({ error: "仅超级管理员可以管理用户" }, { status: 403 });
-  const rows = await getDb().select().from(users).orderBy(desc(users.createdAt)).limit(200);
-  return Response.json({ users: rows.map((row) => userView(row, admin.userId)) });
+  const url = new URL(request.url);
+  const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
+  const pageSize = Math.min(50, Math.max(10, Number(url.searchParams.get("pageSize") ?? 20) || 20));
+  const search = (url.searchParams.get("search") ?? "").trim().slice(0, 100);
+  const where = search ? or(like(users.displayName, `%${search}%`), like(users.email, `%${search}%`)) : undefined;
+  const [{ total }] = await getDb().select({ total: count() }).from(users).where(where);
+  const rows = await getDb().select().from(users).where(where).orderBy(desc(users.createdAt), desc(users.id)).limit(pageSize).offset((page - 1) * pageSize);
+  return Response.json({ users: rows.map((row) => userView(row, admin.userId)), pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) } });
 }
 
 export async function POST(request: Request) {
@@ -121,6 +129,7 @@ export async function DELETE(request: Request) {
     const db = getDb();
     await db.batch([
       db.delete(automationNotificationChannels).where(eq(automationNotificationChannels.userId, id)),
+      db.delete(automationRuns).where(eq(automationRuns.userId, id)),
       db.delete(notificationLogs).where(eq(notificationLogs.userId, id)),
       db.delete(paperTrades).where(eq(paperTrades.userId, id)),
       db.delete(paperPositions).where(eq(paperPositions.userId, id)),
@@ -129,6 +138,7 @@ export async function DELETE(request: Request) {
       db.delete(notificationChannels).where(eq(notificationChannels.userId, id)),
       db.delete(paperAccounts).where(eq(paperAccounts.userId, id)),
       db.delete(customStrategies).where(eq(customStrategies.userId, id)),
+      db.delete(strategyVersions).where(eq(strategyVersions.userId, id)),
       db.delete(userSettings).where(eq(userSettings.userId, id)),
       db.delete(sessions).where(eq(sessions.userId, id)),
       db.delete(users).where(eq(users.id, id)),

@@ -1004,6 +1004,8 @@ input[type="range"] {
 .user-search { display: block; margin-top: 14px; }
 .user-search > span { color: #718096; display: block; font-size: 8px; margin-bottom: 6px; }
 .user-search input { background: #0a0f17; border: 1px solid #263348; border-radius: 7px; color: #eef3fb; font-size: 10px; padding: 9px 10px; width: 100%; }
+.managed-user-heading-actions { display: flex; gap: 7px; }
+.managed-user-heading-actions button { background: transparent; border: 1px solid #2b3a51; border-radius: 6px; color: #7fa3d8; cursor: pointer; font-size: 8px; min-height: 32px; padding: 6px 8px; }
 .managed-user-list { border: 1px solid #222e40; border-radius: 9px; margin-top: 10px; max-height: 430px; overflow: auto; }
 .managed-user-list article { align-items: center; border-top: 1px solid #202b3d; display: grid; gap: 9px; grid-template-columns: 30px minmax(120px, 1fr) auto 62px auto; padding: 10px; }
 .managed-user-list article:first-child { border-top: 0; }
@@ -1022,6 +1024,10 @@ input[type="range"] {
 .managed-user-protected { color: #706b5d; font-size: 7px; text-align: right; white-space: nowrap; }
 .managed-user-protected.current { align-items: center; display: flex; gap: 7px; }
 .managed-user-protected button { background: rgba(244, 201, 93, .07); border: 1px solid rgba(244, 201, 93, .18); border-radius: 5px; color: #c3aa62; cursor: pointer; font-size: 8px; min-height: 30px; padding: 5px 8px; }
+.managed-user-pagination { align-items: center; display: flex; gap: 10px; justify-content: center; margin-top: 12px; }
+.managed-user-pagination button { background: #111a28; border: 1px solid #2b3a51; border-radius: 6px; color: #82a8df; cursor: pointer; font-size: 8px; min-height: 34px; padding: 7px 11px; }
+.managed-user-pagination button:disabled { cursor: not-allowed; opacity: .35; }
+.managed-user-pagination span { color: #68778d; font-size: 8px; }
 .studio-header { align-items: flex-start; background: linear-gradient(135deg, rgba(76, 141, 255, .12), rgba(179, 140, 255, .05)); border-bottom: 1px solid #222d3e; display: flex; justify-content: space-between; padding: 20px 24px; }
 .studio-header span { color: #7185a4; font-family: var(--font-geist-mono), monospace; font-size: 8px; font-weight: 700; letter-spacing: .16em; }
 .studio-header h2 { font-size: 20px; margin: 5px 0 3px; }
@@ -1094,6 +1100,7 @@ input[type="range"] {
 .docs-list dl > div:first-child dt { background: rgba(255, 91, 110, .12); color: #ff8291; }
 .docs-list dl > div:last-child dt { background: rgba(55, 214, 170, .12); color: #5bdab6; }
 .docs-list dd { color: #9aa8bb; font-size: 8px; line-height: 1.5; margin: 0; }
+.strategy-version-note { border-top: 1px solid #202b3d; color: #5e6e85; display: block; font-family: var(--font-geist-mono), monospace; font-size: 7px; margin-top: 9px; padding-top: 8px; }
 
 .auth-gate { align-items: center; background: rgba(3, 5, 9, .88); backdrop-filter: blur(14px); display: flex; inset: 0; justify-content: center; padding: 20px; position: fixed; z-index: 120; }
 .auth-gate > section { background: radial-gradient(circle at 70% 0, rgba(76, 141, 255, .13), transparent 15rem), #0d131d; border: 1px solid #2b3a51; border-radius: 16px; box-shadow: 0 30px 100px rgba(0, 0, 0, .65); max-width: 420px; padding: 28px; width: 100%; }
@@ -1129,6 +1136,14 @@ input[type="range"] {
 .automation-tabs i.connected { background: rgba(55, 214, 170, .12); color: var(--green); }
 .automation-body { padding-top: 16px; }
 .automation-body > .studio-error { margin: 0 0 12px; }
+.trading-calendar-banner { align-items: center; background: rgba(244, 201, 93, .07); border: 1px solid rgba(244, 201, 93, .2); border-radius: 9px; display: flex; gap: 10px; margin-bottom: 12px; padding: 10px 12px; }
+.trading-calendar-banner.open { background: rgba(55, 214, 170, .06); border-color: rgba(55, 214, 170, .2); }
+.trading-calendar-banner > i { align-items: center; background: rgba(244, 201, 93, .13); border-radius: 7px; color: #d8b85e; display: flex; flex: 0 0 auto; font-size: 10px; font-style: normal; height: 30px; justify-content: center; width: 30px; }
+.trading-calendar-banner.open > i { background: rgba(55, 214, 170, .12); color: var(--green); }
+.trading-calendar-banner b, .trading-calendar-banner small { display: block; }
+.trading-calendar-banner b { color: #a8b4c5; font-size: 9px; }
+.trading-calendar-banner small { color: #68778d; font-size: 7px; margin-top: 3px; }
+.trading-calendar-banner a { color: #7da7e4; font-size: 8px; margin-left: auto; white-space: nowrap; }
 .automation-layout { display: grid; gap: 18px; grid-template-columns: minmax(300px, .82fr) minmax(400px, 1.18fr); }
 .automation-form, .automation-list-wrap, .notification-config-form, .tickflow-settings > section, .tickflow-settings > aside { background: #090e15; border: 1px solid #222e40; border-radius: 11px; padding: 15px; }
 .automation-section-title { align-items: center; display: flex; justify-content: space-between; margin-bottom: 14px; }
@@ -1182,6 +1197,9 @@ input[type="range"] {
 .automation-list dl > div { min-width: 0; }
 .automation-list dt { color: #526078; font-size: 7px; }
 .automation-list dd { color: #94a2b6; font-size: 8px; margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.automation-list dd.run-state.failed { color: #ff7f8e; }
+.automation-list dd.run-state.retrying { color: #e0bd63; }
+.automation-list dd.run-state.succeeded { color: var(--green); }
 .task-card-channel-editor { background: #090f18; border: 1px solid #293951; border-radius: 7px; margin-top: 10px; padding: 9px; }
 .task-card-channel-editor > span { color: #7f90a8; display: block; font-size: 7px; }
 .task-card-channel-editor > div { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
@@ -1245,6 +1263,22 @@ input[type="range"] {
 .automation-empty i { align-items: center; background: #142035; border-radius: 50%; color: #7997c6; display: flex; font-size: 15px; font-style: normal; height: 42px; justify-content: center; margin-bottom: 9px; width: 42px; }
 .automation-empty b { color: #8998ad; font-size: 10px; }
 .automation-empty p { font-size: 8px; margin-top: 5px; }
+.automation-run-history { min-height: 480px; }
+.automation-run-list { border: 1px solid #222e40; border-radius: 9px; overflow: hidden; }
+.automation-run-list article { align-items: center; border-top: 1px solid #202b3d; display: grid; gap: 10px; grid-template-columns: 126px 48px 150px minmax(180px, 1fr) 110px; padding: 10px 12px; }
+.automation-run-list article:first-child { border-top: 0; }
+.automation-run-list time { color: #65758c; font-family: var(--font-geist-mono), monospace; font-size: 7px; }
+.automation-run-list article > i { border-radius: 4px; font-size: 7px; font-style: normal; padding: 4px; text-align: center; }
+.automation-run-list article > i.succeeded { background: rgba(55, 214, 170, .1); color: var(--green); }
+.automation-run-list article > i.failed { background: rgba(255, 91, 110, .11); color: #ff8190; }
+.automation-run-list article > i.retrying, .automation-run-list article > i.skipped { background: rgba(244, 201, 93, .1); color: #daba64; }
+.automation-run-list article > i.running, .automation-run-list article > i.pending { background: rgba(76, 141, 255, .11); color: #85b1fa; }
+.automation-run-list span b, .automation-run-list span small { display: block; }
+.automation-run-list span b { color: #a6b3c5; font-size: 9px; }
+.automation-run-list span small { color: #617088; font-size: 7px; margin-top: 3px; }
+.automation-run-list p { color: #7f8da1; font-size: 8px; line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.automation-run-list em { color: #697991; font-size: 7px; font-style: normal; text-align: right; }
+.load-more-runs { background: #111a28; border: 1px solid #2b3a51; border-radius: 7px; color: #82a8df; cursor: pointer; display: block; font-size: 9px; margin: 12px auto 0; min-height: 38px; padding: 8px 18px; }
 .notification-history { min-height: 480px; }
 .notification-table { border: 1px solid #222e40; border-radius: 9px; overflow: hidden; }
 .notification-head, .notification-row { align-items: center; display: grid; gap: 10px; grid-template-columns: 125px 50px 125px minmax(170px, 1fr) 70px; padding: 9px 11px; }
@@ -1299,6 +1333,10 @@ input[type="range"] {
 .paper-list > button b { color: #aebacc; font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .paper-list > button small { color: #596981; font-size: 7px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .paper-list > button > em { font-size: 8px; font-style: normal; }
+.paper-pagination { align-items: center; border-top: 1px solid #1d2838; display: flex; gap: 7px; justify-content: center; margin-top: 8px; padding: 10px 5px 2px; }
+.paper-pagination button { background: #101927; border: 1px solid #29384e; border-radius: 6px; color: #8aa6cf; cursor: pointer; height: 30px; width: 34px; }
+.paper-pagination button:disabled { cursor: not-allowed; opacity: .35; }
+.paper-pagination span { color: #65758d; font-size: 8px; }
 .paper-empty-list { align-items: center; color: #607087; display: flex; flex-direction: column; padding: 70px 20px; text-align: center; }
 .paper-empty-list > i { align-items: center; background: #142035; border-radius: 50%; color: #7997c6; display: flex; font-size: 17px; font-style: normal; height: 44px; justify-content: center; margin-bottom: 10px; width: 44px; }
 .paper-empty-list > b { color: #8998ad; font-size: 10px; }
@@ -1661,6 +1699,20 @@ input[type="range"] {
   .task-toggle span { height: 26px; width: 26px; }
   .task-toggle.on span { transform: translateX(20px); }
   .task-card-channel-editor > div button, .template-variables button { font-size: 10px; min-height: 36px; padding: 8px; }
+  .trading-calendar-banner { align-items: flex-start; padding: 11px; }
+  .trading-calendar-banner b { font-size: 10px; }
+  .trading-calendar-banner small { font-size: 9px; line-height: 1.5; }
+  .trading-calendar-banner a { min-height: 36px; padding-top: 8px; }
+  .automation-run-history { min-height: 0; }
+  .automation-run-list { border: 0; overflow: visible; }
+  .automation-run-list article { background: #0d141f; border: 1px solid #253248; border-radius: 9px; grid-template-columns: minmax(0, 1fr) auto; margin-bottom: 9px; padding: 12px; }
+  .automation-run-list time { font-size: 9px; grid-column: 1; }
+  .automation-run-list article > i { font-size: 9px; grid-column: 2; }
+  .automation-run-list article > span, .automation-run-list article > p, .automation-run-list article > em { grid-column: 1 / -1; }
+  .automation-run-list span b { font-size: 11px; }
+  .automation-run-list span small, .automation-run-list p, .automation-run-list em { font-size: 9px; text-align: left; }
+  .automation-run-list p { overflow: visible; white-space: normal; }
+  .load-more-runs { min-height: 44px; width: 100%; }
   .tickflow-status { align-items: flex-start; padding: 13px; }
   .tickflow-status > i { flex: 0 0 auto; }
   .tickflow-status p, .tickflow-settings > section > p { font-size: 10px; }
@@ -1693,6 +1745,9 @@ input[type="range"] {
   .user-management-layout { gap: 14px; }
   .user-create-form { scroll-margin-top: 12px; }
   .user-search > span { font-size: 10px; }
+  .managed-user-heading-actions { width: 100%; }
+  .managed-user-list-wrap > .automation-section-title { flex-wrap: wrap; gap: 10px; }
+  .managed-user-heading-actions button { flex: 1; font-size: 10px; min-height: 42px; }
   .managed-user-list { max-height: none; }
   .managed-user-list article { grid-template-columns: 36px minmax(0, 1fr) auto; padding: 12px 9px; }
   .managed-user-list article > i { height: 36px; width: 36px; }
@@ -1709,6 +1764,8 @@ input[type="range"] {
   .admin-password-notice { padding: 12px; }
   .admin-password-notice b { font-size: 11px; }
   .admin-password-notice small, .admin-password-encryption { font-size: 9px; }
+  .managed-user-pagination button { font-size: 10px; min-height: 44px; }
+  .managed-user-pagination span { font-size: 9px; }
 
   .paper-account-studio { height: 100dvh; }
   .paper-toolbar { flex: 0 0 auto; gap: 7px; padding: 9px 10px; }
@@ -1721,6 +1778,7 @@ input[type="range"] {
   .paper-list > button { flex-basis: min(78vw, 245px); min-height: 76px; scroll-snap-align: start; }
   .paper-list > button b { font-size: 11px; }
   .paper-list > button small, .paper-list > button > em { font-size: 9px; }
+  .paper-pagination { flex: 0 0 118px; margin: 0; padding: 8px; }
   .paper-detail { height: calc(100% - 112px); max-height: none; padding: 12px; }
   .paper-detail-header { align-items: flex-start; flex-direction: column; }
   .paper-detail-header > div:last-child { flex-direction: row; width: 100%; }

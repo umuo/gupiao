@@ -1,13 +1,16 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { automationNotificationChannels, automations, notificationChannels, paperAccounts, paperPositions, userSettings } from "../../../db/schema";
+import { automationNotificationChannels, automationRuns, automations, notificationChannels, paperAccounts, paperPositions, userSettings } from "../../../db/schema";
 import { getAppUser } from "../../auth";
 import { sanitizeStrategyDraft } from "../../strategy-model";
+import { strategySnapshotHash, strategyVersionNumber } from "../../strategy-version";
 import { APP_TIME_ZONE } from "../../timezone";
+import { aShareTradingDayStatus, nextAShareTradingDay } from "../../trading-calendar";
 
 const SYMBOL_PATTERN = /^\d{6}\.(SH|SZ|BJ)$/;
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const INTERVALS = new Set([1, 5, 15, 30, 60]);
+const MAX_AUTOMATIONS = 100;
 
 function view(row: typeof automations.$inferSelect) {
   return { ...row, strategyDefinition: JSON.parse(row.strategyDefinition), weekdays: JSON.parse(row.weekdays) };
@@ -17,7 +20,7 @@ export async function GET(request: Request) {
   const user = await getAppUser(request);
   if (!user) return Response.json({ error: "请先登录" }, { status: 401 });
   const [rows, settings, channels, mappings, accounts] = await Promise.all([
-    getDb().select().from(automations).where(eq(automations.userId, user.userId)).orderBy(desc(automations.createdAt)),
+    getDb().select().from(automations).where(eq(automations.userId, user.userId)).orderBy(desc(automations.createdAt)).limit(MAX_AUTOMATIONS),
     getDb().select({ tickflow: userSettings.tickflowApiKeyEncrypted, hint: userSettings.tickflowKeyHint }).from(userSettings).where(eq(userSettings.userId, user.userId)).limit(1),
     getDb().select({ id: notificationChannels.id, name: notificationChannels.name, type: notificationChannels.type, enabled: notificationChannels.enabled }).from(notificationChannels).where(eq(notificationChannels.userId, user.userId)).orderBy(desc(notificationChannels.createdAt)),
     getDb().select().from(automationNotificationChannels).where(eq(automationNotificationChannels.userId, user.userId)),
@@ -34,6 +37,7 @@ export async function GET(request: Request) {
     }),
     channels,
     tickflow: { configured: Boolean(settings[0]?.tickflow), hint: settings[0]?.hint ?? null },
+    calendar: { ...aShareTradingDayStatus(), nextTradingDate: nextAShareTradingDay() },
   });
 }
 
@@ -42,6 +46,8 @@ export async function POST(request: Request) {
   if (!user) return Response.json({ error: "请先登录" }, { status: 401 });
   try {
     const payload = await request.json() as Record<string, unknown>;
+    const [{ total }] = await getDb().select({ total: count() }).from(automations).where(eq(automations.userId, user.userId));
+    if (total >= MAX_AUTOMATIONS) throw new Error(`每个用户最多创建 ${MAX_AUTOMATIONS} 个定时任务`);
     const paperAccountId = String(payload.paperAccountId ?? "").trim() || null;
     const name = String(payload.name ?? "").trim().slice(0, 50);
     let symbol = String(payload.symbol ?? "").trim().toUpperCase();
@@ -56,6 +62,8 @@ export async function POST(request: Request) {
     let requestedStopLoss = Number(payload.stopLoss ?? 8);
     let requestedTakeProfit = Number(payload.takeProfit ?? 22);
     let strategy = paperAccountId ? null : sanitizeStrategyDraft(payload.strategy);
+    let strategyVersion = strategyVersionNumber(payload.strategy);
+    let strategyHash = strategy ? await strategySnapshotHash(strategy) : "legacy";
     let initialPositionState: "flat" | "holding" = "flat";
     let initialEntryPrice: number | null = null;
     let initialEnabled = true;
@@ -69,6 +77,8 @@ export async function POST(request: Request) {
       symbol = account.symbol;
       stockName = account.stockName;
       strategyId = account.strategyId;
+      strategyVersion = account.strategyVersion;
+      strategyHash = account.strategySnapshotHash;
       requestedStopLoss = account.stopLoss;
       requestedTakeProfit = account.takeProfit;
       initialEnabled = account.status === "active";
@@ -101,6 +111,8 @@ export async function POST(request: Request) {
       strategyId,
       strategyName: strategy.name,
       strategyDefinition: definition,
+      strategyVersion,
+      strategySnapshotHash: strategyHash,
       dataMode,
       runTime,
       intervalMinutes,
@@ -187,7 +199,11 @@ export async function DELETE(request: Request) {
   if (!user) return Response.json({ error: "请先登录" }, { status: 401 });
   const payload = await request.json() as { id?: string };
   if (!payload.id) return Response.json({ error: "缺少任务 ID" }, { status: 400 });
-  await getDb().delete(automationNotificationChannels).where(and(eq(automationNotificationChannels.automationId, payload.id), eq(automationNotificationChannels.userId, user.userId)));
-  await getDb().delete(automations).where(and(eq(automations.id, payload.id), eq(automations.userId, user.userId)));
+  const db = getDb();
+  await db.batch([
+    db.delete(automationNotificationChannels).where(and(eq(automationNotificationChannels.automationId, payload.id), eq(automationNotificationChannels.userId, user.userId))),
+    db.delete(automationRuns).where(and(eq(automationRuns.automationId, payload.id), eq(automationRuns.userId, user.userId))),
+    db.delete(automations).where(and(eq(automations.id, payload.id), eq(automations.userId, user.userId))),
+  ]);
   return Response.json({ ok: true });
 }

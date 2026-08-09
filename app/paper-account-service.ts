@@ -113,8 +113,21 @@ export async function executePaperSignal(input: {
   const state = await paperAccountState(input.accountId, input.userId);
   if (!state) throw new Error("关联的模拟盘不存在");
   if (state.account.status !== "active") throw new Error("关联的模拟盘已暂停");
-  const existing = await getDb().select({ id: paperTrades.id }).from(paperTrades).where(and(eq(paperTrades.paperAccountId, input.accountId), eq(paperTrades.idempotencyKey, input.signalKey))).limit(1);
-  if (existing.length) return { executed: false, duplicate: true, action: input.action, reason: "该模拟信号已经成交" };
+  const [existing] = await getDb().select().from(paperTrades).where(and(eq(paperTrades.paperAccountId, input.accountId), eq(paperTrades.idempotencyKey, input.signalKey))).limit(1);
+  if (existing) {
+    const currentMarketValue = state.position ? state.position.shares * input.signalPrice : 0;
+    return {
+      executed: false,
+      duplicate: true,
+      action: input.action,
+      reason: input.reason,
+      shares: existing.shares,
+      executionPrice: existing.executionPrice,
+      commission: existing.commission,
+      realizedPnl: existing.realizedPnl,
+      currentEquity: state.account.cash + currentMarketValue,
+    };
+  }
 
   const account = state.account;
   const now = new Date().toISOString();

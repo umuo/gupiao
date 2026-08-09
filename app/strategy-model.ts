@@ -33,6 +33,8 @@ export type StrategyDraft = {
 export type SavedStrategy = StrategyDraft & {
   id: string;
   createdAt?: string;
+  version?: number;
+  contentHash?: string;
 };
 
 export const indicatorLabels: Record<IndicatorKey, string> = {

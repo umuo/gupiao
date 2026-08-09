@@ -197,3 +197,41 @@ test("pins scheduling, notifications, and displayed records to Asia Shanghai", a
   const uiTimeRendering = [tasks, notifications, paperAccounts, users].join("\n");
   assert.doesNotMatch(uiTimeRendering, /new Date\([^\n]*\)\.toLocale(?:Date)?String/);
 });
+
+test("adds exchange-calendar scheduling, reliable execution history, bounded data access, and reproducible strategy snapshots", async () => {
+  const [calendar, schema, migration, runner, runRoute, accountRoute, accountRefresh, taskCenter, paperCenter, strategyRoute, strategyStudio] = await Promise.all([
+    read("app/trading-calendar.ts"),
+    read("db/schema.ts"),
+    read("drizzle/0007_cynical_miek.sql"),
+    read("app/automation-runner.ts"),
+    read("app/api/automation-runs/route.ts"),
+    read("app/api/paper-accounts/route.ts"),
+    read("app/api/paper-accounts/refresh/route.ts"),
+    read("app/task-center.tsx"),
+    read("app/paper-account-center.tsx"),
+    read("app/api/strategies/route.ts"),
+    read("app/strategy-studio.tsx"),
+  ]);
+  assert.match(calendar, /officialClosures/);
+  assert.match(calendar, /2026-10-07/);
+  assert.match(calendar, /nextAShareTradingDay/);
+  assert.match(schema, /automationRuns/);
+  assert.match(schema, /idx_automation_runs_schedule/);
+  assert.match(schema, /strategyVersions/);
+  assert.match(migration, /CREATE TABLE `automation_runs`/);
+  assert.match(migration, /CREATE TABLE `strategy_versions`/);
+  assert.match(migration, /PRAGMA optimize/);
+  assert.match(runner, /scheduleKeyFor/);
+  assert.match(runner, /RUN_LEASE_MS/);
+  assert.match(runner, /mapWithConcurrency\(candidates, 4/);
+  assert.match(runner, /status: retrying \? "retrying" : "failed"/);
+  assert.match(runRoute, /nextCursor/);
+  assert.match(accountRoute, /pageSize/);
+  assert.doesNotMatch(accountRoute, /limit\(1000\)/);
+  assert.match(accountRefresh, /mapSettledWithConcurrency/);
+  assert.match(taskCenter, /运行记录/);
+  assert.match(taskCenter, /交易所官方日历/);
+  assert.match(paperCenter, /paper-pagination/);
+  assert.match(strategyRoute, /strategySnapshotHash/);
+  assert.match(strategyStudio, /不可变规则快照/);
+});

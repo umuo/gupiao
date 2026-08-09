@@ -1,14 +1,16 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { automationNotificationChannels, automations, notificationChannels, notificationLogs, userSettings } from "../db/schema";
+import { automationNotificationChannels, automationRuns, automations, notificationChannels, notificationLogs, userSettings } from "../db/schema";
 import { deliverNotification } from "./notification-delivery";
 import { decryptSecret } from "./secret-box";
 import { executePaperSignal, paperAccountState, paperStrategyFrom, refreshPaperAccountValuation, shanghaiDate } from "./paper-account-service";
 import { signalFor, type Kline, type SignalStrategy } from "./strategy-engine";
 import { fetchTickFlowKlines, fetchTickFlowQuote } from "./tickflow-client";
 import { APP_TIME_ZONE, toAppIsoString } from "./timezone";
+import { aShareTradingDayStatus } from "./trading-calendar";
 
 type AutomationRow = typeof automations.$inferSelect;
+type AutomationRunRow = typeof automationRuns.$inferSelect;
 
 type ShanghaiClock = {
   date: string;
@@ -58,7 +60,7 @@ function inMainlandTradingSession(minuteOfDay: number) {
 
 export function automationIsDue(row: AutomationRow, now = new Date()) {
   const clock = shanghaiClock(now);
-  if (!row.enabled || !weekdaysOf(row).includes(clock.weekday)) return false;
+  if (!row.enabled || !weekdaysOf(row).includes(clock.weekday) || !aShareTradingDayStatus(clock.date).isTradingDay) return false;
   if (row.dataMode === "daily") {
     if (clock.minuteOfDay < parseMinutes(row.runTime) || row.lastRunDate === clock.date) return false;
     return !row.lastRunAt || now.getTime() - new Date(row.lastRunAt).getTime() >= 15 * 60_000;
@@ -66,6 +68,13 @@ export function automationIsDue(row: AutomationRow, now = new Date()) {
   if (!inMainlandTradingSession(clock.minuteOfDay)) return false;
   if (!row.lastRunAt) return true;
   return now.getTime() - new Date(row.lastRunAt).getTime() >= row.intervalMinutes * 60_000;
+}
+
+function scheduleKeyFor(row: AutomationRow, now = new Date()) {
+  const clock = shanghaiClock(now);
+  if (row.dataMode === "daily") return `daily:${clock.date}`;
+  const bucket = Math.floor(clock.minuteOfDay / row.intervalMinutes) * row.intervalMinutes;
+  return `realtime:${clock.date}:${String(Math.floor(bucket / 60)).padStart(2, "0")}:${String(bucket % 60).padStart(2, "0")}`;
 }
 
 function strategyFrom(row: AutomationRow): SignalStrategy {
@@ -121,13 +130,6 @@ async function writeLog(row: AutomationRow, input: {
   });
 }
 
-export async function recordAutomationError(row: AutomationRow, error: unknown) {
-  if (error instanceof Error && error.name === "AutomationDeliveryError") return;
-  const message = error instanceof Error ? error.message : "任务执行失败";
-  await writeLog(row, { type: "error", status: "failed", reason: message });
-  await getDb().update(automations).set({ lastRunAt: new Date().toISOString(), updatedAt: new Date().toISOString() }).where(eq(automations.id, row.id));
-}
-
 export async function runAutomation(row: AutomationRow) {
   const now = new Date();
   const clock = shanghaiClock(now);
@@ -142,6 +144,8 @@ export async function runAutomation(row: AutomationRow) {
   let source = "TickFlow 免费历史日K";
 
   if (row.dataMode === "realtime") {
+    const tradingDay = aShareTradingDayStatus(clock.date);
+    if (!tradingDay.isTradingDay) throw new Error(`当前为${tradingDay.reason}，本次不检查实时信号`);
     if (!weekdaysOf(row).includes(clock.weekday) || !inMainlandTradingSession(clock.minuteOfDay)) throw new Error("当前不在 A 股连续竞价时段，本次不检查实时信号");
     const [settings] = await getDb().select().from(userSettings).where(eq(userSettings.userId, row.userId)).limit(1);
     if (!settings?.tickflowApiKeyEncrypted) throw new Error("请先在定时任务的实时数据中配置 TickFlow Key");
@@ -210,7 +214,7 @@ export async function runAutomation(row: AutomationRow) {
     barTimestamp: bar.timestamp,
     signalKey: `${row.id}:${signalKey}`,
   }) : null;
-  if (execution && !execution.executed) {
+  if (execution && !execution.executed && !execution.duplicate) {
     await getDb().update(automations).set({ ...commonUpdate, lastSignalKey: signalKey }).where(eq(automations.id, row.id));
     return { action: null, price: bar.close, reason: execution.reason, source, execution };
   }
@@ -256,7 +260,19 @@ export async function runAutomation(row: AutomationRow) {
   };
   const deliveryResults = await Promise.all(channels.map(async (channel) => {
     try {
-      const delivered = await deliverNotification(channel, payload);
+      let delivered: Awaited<ReturnType<typeof deliverNotification>> | null = null;
+      let deliveryError: unknown = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (attempt) await new Promise((resolve) => setTimeout(resolve, attempt === 1 ? 300 : 900));
+        try {
+          delivered = await deliverNotification(channel, payload);
+          const retryable = !delivered.ok && (!delivered.status || delivered.status === 408 || delivered.status === 429 || delivered.status >= 500);
+          if (!retryable) break;
+        } catch (error) {
+          deliveryError = error;
+        }
+      }
+      if (!delivered) throw deliveryError instanceof Error ? deliveryError : new Error("通知投递失败");
       await writeLog(row, {
         type: action,
         status: delivered.ok ? "success" : "failed",
@@ -291,21 +307,162 @@ export async function runAutomation(row: AutomationRow) {
   return { action, price: execution?.executionPrice ?? bar.close, reason, source, execution, deliveries: { total: channelIds.length, succeeded, failed: deliveryResults.length - succeeded + missing } };
 }
 
-export async function runDueAutomations() {
-  const rows = await getDb().select().from(automations).where(eq(automations.enabled, true));
-  const due = rows.filter((row) => automationIsDue(row));
-  const results = await Promise.allSettled(due.map(async (row) => {
-    try {
-      return await runAutomation(row);
-    } catch (error) {
-      await recordAutomationError(row, error);
-      throw error;
+const RUN_LEASE_MS = 2 * 60_000;
+
+async function ensureAutomationRun(row: AutomationRow, trigger: "scheduled" | "manual", scheduleKey: string) {
+  const [created] = await getDb().insert(automationRuns).values({
+    id: crypto.randomUUID(),
+    userId: row.userId,
+    automationId: row.id,
+    trigger,
+    scheduleKey,
+    status: "pending",
+    maxAttempts: 3,
+  }).onConflictDoNothing({ target: [automationRuns.automationId, automationRuns.scheduleKey] }).returning();
+  if (created) return created;
+  const [existing] = await getDb().select().from(automationRuns).where(and(eq(automationRuns.automationId, row.id), eq(automationRuns.scheduleKey, scheduleKey))).limit(1);
+  if (!existing) throw new Error("任务运行记录创建失败");
+  return existing;
+}
+
+async function releaseAutomationLease(automationId: string, owner: string) {
+  await getDb().update(automations).set({ leaseOwner: null, leaseExpiresAt: null, updatedAt: new Date().toISOString() }).where(and(eq(automations.id, automationId), eq(automations.leaseOwner, owner)));
+}
+
+type ProcessedAutomationRun = AutomationRunRow & { result?: Awaited<ReturnType<typeof runAutomation>> };
+
+async function processAutomationRun(run: AutomationRunRow): Promise<ProcessedAutomationRun> {
+  const db = getDb();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const owner = `${run.id}:${crypto.randomUUID()}`;
+  const leaseExpiresAt = new Date(now.getTime() + RUN_LEASE_MS).toISOString();
+  const [claimed] = await db.update(automationRuns).set({
+    status: "running",
+    attempt: sql`${automationRuns.attempt} + 1`,
+    leaseOwner: owner,
+    leaseExpiresAt,
+    nextRetryAt: null,
+    startedAt: nowIso,
+    updatedAt: nowIso,
+  }).where(and(
+    eq(automationRuns.id, run.id),
+    or(
+      inArray(automationRuns.status, ["pending", "retrying"]),
+      and(eq(automationRuns.status, "running"), or(isNull(automationRuns.leaseExpiresAt), lt(automationRuns.leaseExpiresAt, nowIso))),
+    ),
+  )).returning();
+  if (!claimed) return run;
+
+  const [row] = await db.select().from(automations).where(and(eq(automations.id, claimed.automationId), eq(automations.userId, claimed.userId))).limit(1);
+  if (!row) {
+    const [failed] = await db.update(automationRuns).set({ status: "failed", error: "任务已删除", reason: "任务已删除", finishedAt: nowIso, leaseOwner: null, leaseExpiresAt: null, updatedAt: nowIso }).where(eq(automationRuns.id, claimed.id)).returning();
+    return failed;
+  }
+  if (!row.enabled && claimed.trigger === "scheduled") {
+    const [skipped] = await db.update(automationRuns).set({ status: "skipped", reason: "任务已停用", finishedAt: nowIso, leaseOwner: null, leaseExpiresAt: null, updatedAt: nowIso }).where(eq(automationRuns.id, claimed.id)).returning();
+    return skipped;
+  }
+
+  const [leased] = await db.update(automations).set({ leaseOwner: owner, leaseExpiresAt, updatedAt: nowIso }).where(and(
+    eq(automations.id, row.id),
+    or(isNull(automations.leaseOwner), isNull(automations.leaseExpiresAt), lt(automations.leaseExpiresAt, nowIso), eq(automations.leaseOwner, owner)),
+  )).returning();
+  if (!leased) {
+    const nextRetryAt = new Date(now.getTime() + 60_000).toISOString();
+    const [retrying] = await db.update(automationRuns).set({ status: "retrying", attempt: Math.max(0, claimed.attempt - 1), reason: "同一任务正在其他实例执行，已排队", nextRetryAt, leaseOwner: null, leaseExpiresAt: null, updatedAt: nowIso }).where(eq(automationRuns.id, claimed.id)).returning();
+    return retrying;
+  }
+
+  try {
+    const latestRow = leased;
+    const result = await runAutomation(latestRow);
+    const deliveries = result.deliveries ?? { total: 0, succeeded: 0, failed: 0 };
+    const completedAt = new Date().toISOString();
+    const [completed] = await db.update(automationRuns).set({
+      status: "succeeded",
+      action: result.action,
+      price: result.price,
+      reason: result.reason.slice(0, 500),
+      source: result.source,
+      deliveryTotal: deliveries.total,
+      deliverySucceeded: deliveries.succeeded,
+      deliveryFailed: deliveries.failed ?? 0,
+      error: null,
+      finishedAt: completedAt,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      updatedAt: completedAt,
+    }).where(eq(automationRuns.id, claimed.id)).returning();
+    await db.update(automations).set({ lastStatus: "succeeded", lastError: null, consecutiveFailures: 0, updatedAt: completedAt }).where(eq(automations.id, row.id));
+    return { ...completed, result };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "任务执行失败";
+    const retrying = claimed.attempt < claimed.maxAttempts;
+    const finishedAt = new Date().toISOString();
+    const nextRetryAt = retrying ? new Date(Date.now() + (claimed.attempt === 1 ? 60_000 : 5 * 60_000)).toISOString() : null;
+    const [failed] = await db.update(automationRuns).set({
+      status: retrying ? "retrying" : "failed",
+      reason: retrying ? `执行失败，将自动重试：${message}`.slice(0, 500) : message.slice(0, 500),
+      error: message.slice(0, 1_000),
+      nextRetryAt,
+      finishedAt: retrying ? null : finishedAt,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      updatedAt: finishedAt,
+    }).where(eq(automationRuns.id, claimed.id)).returning();
+    await db.update(automations).set({
+      lastRunAt: finishedAt,
+      lastStatus: retrying ? "retrying" : "failed",
+      lastError: message.slice(0, 500),
+      consecutiveFailures: sql`${automations.consecutiveFailures} + 1`,
+      updatedAt: finishedAt,
+    }).where(eq(automations.id, row.id));
+    if (!retrying) await writeLog(row, { type: "error", status: "failed", reason: message });
+    return failed;
+  } finally {
+    await releaseAutomationLease(row.id, owner);
+  }
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, mapper: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(items[index]);
     }
-  }));
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+export async function runAutomationNow(row: AutomationRow) {
+  const run = await ensureAutomationRun(row, "manual", `manual:${crypto.randomUUID()}`);
+  return processAutomationRun(run);
+}
+
+export async function runDueAutomations() {
+  const db = getDb();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const rows = await db.select().from(automations).where(eq(automations.enabled, true)).orderBy(automations.runTime).limit(100);
+  const due = rows.filter((row) => automationIsDue(row, now));
+  await Promise.all(due.map((row) => ensureAutomationRun(row, "scheduled", scheduleKeyFor(row, now))));
+  const candidates = await db.select().from(automationRuns).where(or(
+    and(inArray(automationRuns.status, ["pending", "retrying"]), or(isNull(automationRuns.nextRetryAt), lt(automationRuns.nextRetryAt, new Date(now.getTime() + 1_000).toISOString()))),
+    and(eq(automationRuns.status, "running"), lt(automationRuns.leaseExpiresAt, nowIso)),
+  )).orderBy(automationRuns.createdAt).limit(20);
+  const results = await mapWithConcurrency(candidates, 4, (run) => processAutomationRun(run));
   return {
-    checked: due.length,
-    succeeded: results.filter((result) => result.status === "fulfilled").length,
-    failed: results.filter((result) => result.status === "rejected").length,
+    checked: rows.length,
+    scheduled: due.length,
+    processed: results.length,
+    succeeded: results.filter((result) => result.status === "succeeded").length,
+    failed: results.filter((result) => result.status === "failed").length,
+    retrying: results.filter((result) => result.status === "retrying").length,
   };
 }
 

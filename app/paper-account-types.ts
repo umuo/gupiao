@@ -9,6 +9,8 @@ export type PaperAccountAutomation = {
   intervalMinutes: number;
   lastRunAt: string | null;
   lastNotifiedAt: string | null;
+  lastStatus: "idle" | "succeeded" | "failed" | "skipped" | "retrying";
+  lastError: string | null;
   notificationChannelIds: string[];
   notificationChannelNames: string[];
 };
@@ -22,6 +24,8 @@ export type PaperAccountView = {
   strategyId: string;
   strategyName: string;
   strategyDefinition: Pick<StrategyDraft, "entryLogic" | "exitLogic" | "entryRules" | "exitRules">;
+  strategyVersion: number;
+  strategySnapshotHash: string;
   initialCapital: number;
   cash: number;
   realizedPnl: number;

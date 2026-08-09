@@ -1,12 +1,14 @@
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { automationNotificationChannels, automations, notificationChannels, paperAccounts, paperEquitySnapshots, paperPositions, paperTrades } from "../../../db/schema";
+import { automationNotificationChannels, automationRuns, automations, notificationChannels, paperAccounts, paperEquitySnapshots, paperPositions, paperTrades } from "../../../db/schema";
 import { getAppUser } from "../../auth";
 import { shanghaiDate } from "../../paper-account-service";
 import { sanitizeStrategyDraft } from "../../strategy-model";
+import { strategySnapshotHash, strategyVersionNumber } from "../../strategy-version";
 
 const SYMBOL_PATTERN = /^\d{6}\.(SH|SZ|BJ)$/;
-const MAX_ACCOUNTS = 20;
+const MAX_ACCOUNTS = 100;
+const DEFAULT_PAGE_SIZE = 10;
 
 function boundedNumber(value: unknown, label: string, minimum: number, maximum: number) {
   const number = Number(value);
@@ -23,22 +25,33 @@ function duplicateMessage(error: unknown) {
   return message.includes("UNIQUE") || message.includes("unique") ? "模拟盘名称不能重复" : (message || "保存模拟盘失败");
 }
 
-async function accountViews(userId: string) {
+async function accountViews(userId: string, options: { page?: number; pageSize?: number; id?: string } = {}) {
   const db = getDb();
-  const [accounts, positions, trades, snapshots, tasks, mappings, channels] = await Promise.all([
-    db.select().from(paperAccounts).where(eq(paperAccounts.userId, userId)).orderBy(desc(paperAccounts.createdAt)),
-    db.select().from(paperPositions).where(eq(paperPositions.userId, userId)),
-    db.select().from(paperTrades).where(eq(paperTrades.userId, userId)).orderBy(desc(paperTrades.executedAt)).limit(1000),
-    db.select().from(paperEquitySnapshots).where(eq(paperEquitySnapshots.userId, userId)).orderBy(desc(paperEquitySnapshots.snapshotDate)).limit(1000),
-    db.select().from(automations).where(eq(automations.userId, userId)),
-    db.select().from(automationNotificationChannels).where(eq(automationNotificationChannels.userId, userId)),
+  const page = Math.max(1, options.page ?? 1);
+  const pageSize = Math.min(20, Math.max(5, options.pageSize ?? DEFAULT_PAGE_SIZE));
+  const accountWhere = options.id
+    ? and(eq(paperAccounts.userId, userId), eq(paperAccounts.id, options.id))
+    : eq(paperAccounts.userId, userId);
+  const [{ total }] = await db.select({ total: count() }).from(paperAccounts).where(accountWhere);
+  const accounts = await db.select().from(paperAccounts).where(accountWhere).orderBy(desc(paperAccounts.createdAt)).limit(options.id ? 1 : pageSize).offset(options.id ? 0 : (page - 1) * pageSize);
+  if (!accounts.length) return { accounts: [], pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) } };
+  const accountIds = accounts.map((item) => item.id);
+  const [positions, tradesByAccount, snapshotsByAccount, tradeCounts, tasks, channels] = await Promise.all([
+    db.select().from(paperPositions).where(and(eq(paperPositions.userId, userId), inArray(paperPositions.paperAccountId, accountIds))),
+    Promise.all(accountIds.map((paperAccountId) => db.select().from(paperTrades).where(and(eq(paperTrades.userId, userId), eq(paperTrades.paperAccountId, paperAccountId))).orderBy(desc(paperTrades.executedAt)).limit(30))),
+    Promise.all(accountIds.map((paperAccountId) => db.select().from(paperEquitySnapshots).where(and(eq(paperEquitySnapshots.userId, userId), eq(paperEquitySnapshots.paperAccountId, paperAccountId))).orderBy(desc(paperEquitySnapshots.snapshotDate)).limit(60))),
+    db.select({ paperAccountId: paperTrades.paperAccountId, total: count() }).from(paperTrades).where(and(eq(paperTrades.userId, userId), inArray(paperTrades.paperAccountId, accountIds))).groupBy(paperTrades.paperAccountId),
+    db.select().from(automations).where(and(eq(automations.userId, userId), inArray(automations.paperAccountId, accountIds))),
     db.select({ id: notificationChannels.id, name: notificationChannels.name }).from(notificationChannels).where(eq(notificationChannels.userId, userId)),
   ]);
+  const taskIds = tasks.map((item) => item.id);
+  const mappings = taskIds.length ? await db.select().from(automationNotificationChannels).where(and(eq(automationNotificationChannels.userId, userId), inArray(automationNotificationChannels.automationId, taskIds))) : [];
   const channelNames = new Map(channels.map((channel) => [channel.id, channel.name]));
-  return accounts.map((account) => {
+  const countByAccount = new Map(tradeCounts.map((item) => [item.paperAccountId, item.total]));
+  const views = accounts.map((account, accountIndex) => {
     const position = positions.find((item) => item.paperAccountId === account.id) ?? null;
-    const accountTrades = trades.filter((item) => item.paperAccountId === account.id);
-    const accountSnapshots = snapshots.filter((item) => item.paperAccountId === account.id).slice(0, 60).reverse();
+    const accountTrades = tradesByAccount[accountIndex] ?? [];
+    const accountSnapshots = [...(snapshotsByAccount[accountIndex] ?? [])].reverse();
     const task = tasks.find((item) => item.paperAccountId === account.id) ?? null;
     const taskMappings = task ? mappings.filter((item) => item.automationId === task.id) : [];
     const marketPrice = account.lastPrice ?? position?.lastPrice ?? position?.averageCost ?? 0;
@@ -54,7 +67,7 @@ async function accountViews(userId: string) {
       strategyDefinition: JSON.parse(account.strategyDefinition),
       position,
       trades: accountTrades.slice(0, 30),
-      tradeCount: accountTrades.length,
+      tradeCount: countByAccount.get(account.id) ?? 0,
       snapshots: accountSnapshots,
       metrics: { equity, marketValue, unrealizedPnl, realizedPnl: account.realizedPnl, totalReturn, dailyReturn },
       automation: task ? {
@@ -66,17 +79,23 @@ async function accountViews(userId: string) {
         intervalMinutes: task.intervalMinutes,
         lastRunAt: task.lastRunAt,
         lastNotifiedAt: task.lastNotifiedAt,
+        lastStatus: task.lastStatus,
+        lastError: task.lastError,
         notificationChannelIds: taskMappings.map((item) => item.notificationChannelId),
         notificationChannelNames: taskMappings.map((item) => channelNames.get(item.notificationChannelId) ?? "渠道已删除"),
       } : null,
     };
   });
+  return { accounts: views, pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) } };
 }
 
 export async function GET(request: Request) {
   const user = await getAppUser(request);
   if (!user) return Response.json({ error: "请先登录" }, { status: 401 });
-  return Response.json({ accounts: await accountViews(user.userId) });
+  const url = new URL(request.url);
+  const page = Number(url.searchParams.get("page") ?? 1) || 1;
+  const pageSize = Number(url.searchParams.get("pageSize") ?? DEFAULT_PAGE_SIZE) || DEFAULT_PAGE_SIZE;
+  return Response.json(await accountViews(user.userId, { page, pageSize }));
 }
 
 export async function POST(request: Request) {
@@ -92,6 +111,8 @@ export async function POST(request: Request) {
     const stockName = String(payload.stockName ?? "").trim().slice(0, 30);
     const strategyId = String(payload.strategyId ?? "").trim().slice(0, 100);
     const strategy = sanitizeStrategyDraft(payload.strategy);
+    const strategyVersion = strategyVersionNumber(payload.strategy);
+    const strategyHash = await strategySnapshotHash(strategy);
     const initialCapital = boundedNumber(payload.initialCapital, "初始本金", 1, 1_000_000_000_000);
     const positionPercent = boundedNumber(payload.positionPercent ?? 30, "单票仓位", 1, 100);
     const stopLoss = boundedNumber(payload.stopLoss ?? 8, "止损", 0.1, 100);
@@ -101,10 +122,10 @@ export async function POST(request: Request) {
     const id = crypto.randomUUID();
     const db = getDb();
     await db.batch([
-      db.insert(paperAccounts).values({ id, userId: user.userId, name, description, symbol, stockName, strategyId, strategyName: strategy.name, strategyDefinition: strategyDefinition(strategy), initialCapital, cash: initialCapital, positionPercent, stopLoss, takeProfit, updatedAt: now }),
+      db.insert(paperAccounts).values({ id, userId: user.userId, name, description, symbol, stockName, strategyId, strategyName: strategy.name, strategyDefinition: strategyDefinition(strategy), strategyVersion, strategySnapshotHash: strategyHash, initialCapital, cash: initialCapital, positionPercent, stopLoss, takeProfit, updatedAt: now }),
       db.insert(paperEquitySnapshots).values({ id: crypto.randomUUID(), userId: user.userId, paperAccountId: id, snapshotDate: shanghaiDate(), equity: initialCapital, cash: initialCapital, marketValue: 0, totalReturn: 0, realizedPnl: 0, unrealizedPnl: 0, updatedAt: now }),
     ]);
-    return Response.json({ account: (await accountViews(user.userId)).find((item) => item.id === id) }, { status: 201 });
+    return Response.json({ account: (await accountViews(user.userId, { id })).accounts[0] }, { status: 201 });
   } catch (error) {
     return Response.json({ error: duplicateMessage(error) }, { status: 400 });
   }
@@ -136,9 +157,11 @@ export async function PATCH(request: Request) {
       const stockName = String(payload.stockName ?? existing.stockName).trim().slice(0, 30);
       const strategyId = String(payload.strategyId ?? existing.strategyId).trim().slice(0, 100);
       const strategy = sanitizeStrategyDraft(payload.strategy ?? { name: existing.strategyName, description: "", tag: "模拟盘", ...JSON.parse(existing.strategyDefinition) });
+      const strategyVersion = payload.strategy === undefined ? existing.strategyVersion : strategyVersionNumber(payload.strategy);
+      const strategyHash = await strategySnapshotHash(strategy);
       const initialCapital = boundedNumber(payload.initialCapital ?? existing.initialCapital, "初始本金", 1, 1_000_000_000_000);
       if (!stockName || !strategyId || !SYMBOL_PATTERN.test(symbol)) throw new Error("股票或策略配置无效");
-      Object.assign(changes, { symbol, stockName, strategyId, strategyName: strategy.name, strategyDefinition: strategyDefinition(strategy), initialCapital, cash: initialCapital });
+      Object.assign(changes, { symbol, stockName, strategyId, strategyName: strategy.name, strategyDefinition: strategyDefinition(strategy), strategyVersion, strategySnapshotHash: strategyHash, initialCapital, cash: initialCapital });
     } else if (["symbol", "stockName", "strategyId", "strategy", "initialCapital"].some((key) => key in payload)) {
       const requestedCapital = Number(payload.initialCapital ?? existing.initialCapital);
       const requestedSymbol = String(payload.symbol ?? existing.symbol);
@@ -159,6 +182,8 @@ export async function PATCH(request: Request) {
         strategyId: account.strategyId,
         strategyName: account.strategyName,
         strategyDefinition: account.strategyDefinition,
+        strategyVersion: account.strategyVersion,
+        strategySnapshotHash: account.strategySnapshotHash,
         stopLoss: account.stopLoss,
         takeProfit: account.takeProfit,
         updatedAt: new Date().toISOString(),
@@ -166,7 +191,7 @@ export async function PATCH(request: Request) {
       if (account.status === "paused") taskChanges.enabled = false;
       await getDb().update(automations).set(taskChanges).where(eq(automations.id, task.id));
     }
-    return Response.json({ account: (await accountViews(user.userId)).find((item) => item.id === id) });
+    return Response.json({ account: (await accountViews(user.userId, { id })).accounts[0] });
   } catch (error) {
     return Response.json({ error: duplicateMessage(error) }, { status: 400 });
   }
@@ -183,6 +208,7 @@ export async function DELETE(request: Request) {
   const tasks = await getDb().select({ id: automations.id }).from(automations).where(and(eq(automations.paperAccountId, id), eq(automations.userId, user.userId)));
   const taskIds = tasks.map((task) => task.id);
   if (taskIds.length) await getDb().delete(automationNotificationChannels).where(and(eq(automationNotificationChannels.userId, user.userId), inArray(automationNotificationChannels.automationId, taskIds)));
+  if (taskIds.length) await getDb().delete(automationRuns).where(and(eq(automationRuns.userId, user.userId), inArray(automationRuns.automationId, taskIds)));
   await getDb().batch([
     getDb().delete(automations).where(and(eq(automations.paperAccountId, id), eq(automations.userId, user.userId))),
     getDb().delete(paperPositions).where(and(eq(paperPositions.paperAccountId, id), eq(paperPositions.userId, user.userId))),

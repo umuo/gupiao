@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { encryptAuthCredentials } from "./auth-crypto-client";
 import { formatAppDate } from "./timezone";
 
@@ -19,6 +19,8 @@ export function UserManagement({ open, onClose, onToast }: {
   onToast: (message: string) => void;
 }) {
   const [items, setItems] = useState<ManagedUser[]>([]);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 1 });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adminPasswordMode, setAdminPasswordMode] = useState(false);
   const [displayName, setDisplayName] = useState("");
@@ -37,25 +39,22 @@ export function UserManagement({ open, onClose, onToast }: {
   const refresh = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const response = await fetch("/api/admin/users", { cache: "no-store" });
-      const payload = await response.json() as { users?: ManagedUser[]; error?: string };
+      const parameters = new URLSearchParams({ page: String(page), pageSize: "20" });
+      if (search.trim()) parameters.set("search", search.trim());
+      const response = await fetch(`/api/admin/users?${parameters}`, { cache: "no-store" });
+      const payload = await response.json() as { users?: ManagedUser[]; pagination?: { page: number; pageSize: number; total: number; totalPages: number }; error?: string };
       if (!response.ok) throw new Error(payload.error || "读取用户失败");
       setItems(payload.users ?? []);
+      if (payload.pagination) setPagination(payload.pagination);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "读取用户失败"); }
     finally { setLoading(false); }
-  }, []);
+  }, [page, search]);
 
   useEffect(() => {
     if (!open) return;
-    const timer = window.setTimeout(() => void refresh(), 0);
+    const timer = window.setTimeout(() => void refresh(), 250);
     return () => window.clearTimeout(timer);
   }, [open, refresh]);
-
-  const filteredItems = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    if (!keyword) return items;
-    return items.filter((item) => item.displayName.toLowerCase().includes(keyword) || item.email.toLowerCase().includes(keyword));
-  }, [items, search]);
 
   if (!open) return null;
 
@@ -86,12 +85,13 @@ export function UserManagement({ open, onClose, onToast }: {
       });
       const payload = await response.json() as { user?: ManagedUser; sessionsRevoked?: boolean; error?: string };
       if (!response.ok || !payload.user) throw new Error(payload.error || (editingId ? "更新用户失败" : "创建用户失败"));
-      if (editingId) setItems((current) => current.map((item) => item.id === payload.user!.id ? payload.user! : item));
-      else setItems((current) => [payload.user!, ...current]);
       const message = editingId
         ? `${payload.user.displayName}资料已更新${payload.sessionsRevoked ? "，原登录会话已退出" : ""}`
         : `普通用户 ${payload.user.displayName} 已创建`;
-      resetForm(); onToast(message);
+      resetForm();
+      if (!editingId) setPage(1);
+      await refresh();
+      onToast(message);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "保存用户失败"); }
     finally { setSaving(false); }
   };
@@ -104,8 +104,9 @@ export function UserManagement({ open, onClose, onToast }: {
       const response = await fetch("/api/admin/users", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: user.id }) });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || "删除用户失败");
-      setItems((current) => current.filter((item) => item.id !== user.id));
       if (editingId === user.id) resetForm();
+      if (items.length === 1 && page > 1) setPage((value) => value - 1);
+      else await refresh();
       onToast(`用户 ${user.displayName} 及其业务数据已删除`);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "删除用户失败"); }
     finally { setDeletingId(null); }
@@ -155,9 +156,10 @@ export function UserManagement({ open, onClose, onToast }: {
             </form>}
         </section>
         <section className="managed-user-list-wrap">
-          <div className="automation-section-title"><div><span>ACCOUNTS</span><h3>系统用户</h3></div><button onClick={refresh}>{loading ? "刷新中…" : `${items.length} 人`}</button></div>
-          <label className="user-search"><span>查找用户</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="输入昵称或邮箱" /></label>
-          <div className="managed-user-list">{filteredItems.length ? filteredItems.map((item) => <article className={editingId === item.id || (adminPasswordMode && item.isCurrent) ? "editing" : ""} key={item.id}><i>{item.displayName.slice(0, 2).toUpperCase()}</i><div className="managed-user-identity"><b>{item.displayName}</b><small>{item.email}</small></div><span className={item.role}>{item.role === "superadmin" ? "超级管理员" : "普通用户"}</span><time>{formatAppDate(item.createdAt)}</time>{item.role === "superadmin" ? <div className={`managed-user-protected ${item.isCurrent ? "current" : ""}`}><span>{item.isCurrent ? "当前账号 · 受保护" : "受保护"}</span>{item.isCurrent && <button onClick={startAdminPasswordChange}>修改密码</button>}</div> : <div className="managed-user-actions"><button onClick={() => editUser(item)}>编辑</button><button className="danger" disabled={deletingId === item.id} onClick={() => deleteUser(item)}>{deletingId === item.id ? "删除中…" : "删除"}</button></div>}</article>) : <div className="automation-empty"><i>♙</i><b>{loading ? "正在读取用户…" : search ? "没有匹配的用户" : "暂无用户"}</b></div>}</div>
+          <div className="automation-section-title"><div><span>ACCOUNTS</span><h3>系统用户 · {pagination.total} 人</h3></div><div className="managed-user-heading-actions"><button onClick={startAdminPasswordChange}>修改管理员密码</button><button onClick={refresh}>{loading ? "刷新中…" : "刷新"}</button></div></div>
+          <label className="user-search"><span>查找用户</span><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="输入昵称或邮箱（全量搜索）" /></label>
+          <div className="managed-user-list">{items.length ? items.map((item) => <article className={editingId === item.id || (adminPasswordMode && item.isCurrent) ? "editing" : ""} key={item.id}><i>{item.displayName.slice(0, 2).toUpperCase()}</i><div className="managed-user-identity"><b>{item.displayName}</b><small>{item.email}</small></div><span className={item.role}>{item.role === "superadmin" ? "超级管理员" : "普通用户"}</span><time>{formatAppDate(item.createdAt)}</time>{item.role === "superadmin" ? <div className={`managed-user-protected ${item.isCurrent ? "current" : ""}`}><span>{item.isCurrent ? "当前账号 · 受保护" : "受保护"}</span>{item.isCurrent && <button onClick={startAdminPasswordChange}>修改密码</button>}</div> : <div className="managed-user-actions"><button onClick={() => editUser(item)}>编辑</button><button className="danger" disabled={deletingId === item.id} onClick={() => deleteUser(item)}>{deletingId === item.id ? "删除中…" : "删除"}</button></div>}</article>) : <div className="automation-empty"><i>♙</i><b>{loading ? "正在读取用户…" : search ? "没有匹配的用户" : "暂无用户"}</b></div>}</div>
+          {pagination.totalPages > 1 && <div className="managed-user-pagination"><button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>上一页</button><span>第 {page} / {pagination.totalPages} 页</span><button disabled={page >= pagination.totalPages} onClick={() => setPage((value) => Math.min(pagination.totalPages, value + 1))}>下一页</button></div>}
         </section>
       </div>
     </section>

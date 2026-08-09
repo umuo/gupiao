@@ -25,9 +25,26 @@ export const customStrategies = sqliteTable("custom_strategies", {
   description: text("description").notNull().default(""),
   tag: text("tag").notNull().default("自定义"),
   definition: text("definition").notNull(),
+  currentVersion: integer("current_version").notNull().default(1),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [index("idx_custom_strategies_user_id").on(table.userId)]);
+
+export const strategyVersions = sqliteTable("strategy_versions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  strategyId: text("strategy_id").notNull(),
+  version: integer("version").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  tag: text("tag").notNull().default("自定义"),
+  definition: text("definition").notNull(),
+  contentHash: text("content_hash").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("idx_strategy_versions_strategy_version").on(table.strategyId, table.version),
+  index("idx_strategy_versions_user_created").on(table.userId, table.createdAt),
+]);
 
 export const userSettings = sqliteTable("user_settings", {
   userId: text("user_id").primaryKey(),
@@ -48,6 +65,8 @@ export const paperAccounts = sqliteTable("paper_accounts", {
   strategyId: text("strategy_id").notNull(),
   strategyName: text("strategy_name").notNull(),
   strategyDefinition: text("strategy_definition").notNull(),
+  strategyVersion: integer("strategy_version").notNull().default(1),
+  strategySnapshotHash: text("strategy_snapshot_hash").notNull().default("legacy"),
   initialCapital: real("initial_capital").notNull(),
   cash: real("cash").notNull(),
   realizedPnl: real("realized_pnl").notNull().default(0),
@@ -151,6 +170,8 @@ export const automations = sqliteTable("automations", {
   strategyId: text("strategy_id").notNull(),
   strategyName: text("strategy_name").notNull(),
   strategyDefinition: text("strategy_definition").notNull(),
+  strategyVersion: integer("strategy_version").notNull().default(1),
+  strategySnapshotHash: text("strategy_snapshot_hash").notNull().default("legacy"),
   dataMode: text("data_mode", { enum: ["daily", "realtime"] }).notNull().default("daily"),
   runTime: text("run_time").notNull().default("09:35"),
   intervalMinutes: integer("interval_minutes").notNull().default(5),
@@ -166,12 +187,48 @@ export const automations = sqliteTable("automations", {
   lastRunAt: text("last_run_at"),
   lastSignalKey: text("last_signal_key"),
   lastNotifiedAt: text("last_notified_at"),
+  lastStatus: text("last_status", { enum: ["idle", "succeeded", "failed", "skipped", "retrying"] }).notNull().default("idle"),
+  lastError: text("last_error"),
+  consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+  leaseOwner: text("lease_owner"),
+  leaseExpiresAt: text("lease_expires_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   index("idx_automations_user_id").on(table.userId),
   index("idx_automations_enabled_time").on(table.enabled, table.runTime),
   uniqueIndex("idx_automations_paper_account_id").on(table.paperAccountId),
+]);
+
+export const automationRuns = sqliteTable("automation_runs", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  automationId: text("automation_id").notNull(),
+  trigger: text("trigger", { enum: ["scheduled", "manual"] }).notNull(),
+  scheduleKey: text("schedule_key").notNull(),
+  status: text("status", { enum: ["pending", "running", "retrying", "succeeded", "failed", "skipped"] }).notNull().default("pending"),
+  attempt: integer("attempt").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  leaseOwner: text("lease_owner"),
+  leaseExpiresAt: text("lease_expires_at"),
+  nextRetryAt: text("next_retry_at"),
+  startedAt: text("started_at"),
+  finishedAt: text("finished_at"),
+  action: text("action", { enum: ["buy", "sell"] }),
+  price: real("price"),
+  reason: text("reason").notNull().default(""),
+  source: text("source"),
+  deliveryTotal: integer("delivery_total").notNull().default(0),
+  deliverySucceeded: integer("delivery_succeeded").notNull().default(0),
+  deliveryFailed: integer("delivery_failed").notNull().default(0),
+  error: text("error"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("idx_automation_runs_schedule").on(table.automationId, table.scheduleKey),
+  index("idx_automation_runs_user_created").on(table.userId, table.createdAt),
+  index("idx_automation_runs_automation_created").on(table.automationId, table.createdAt),
+  index("idx_automation_runs_retry").on(table.status, table.nextRetryAt),
 ]);
 
 export const automationNotificationChannels = sqliteTable("automation_notification_channels", {
