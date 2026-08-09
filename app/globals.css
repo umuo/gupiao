@@ -995,6 +995,12 @@ input[type="range"] {
 .user-create-form label > small { color: #63738b; display: block; font-size: 7px; margin-top: 5px; }
 .user-create-form input { background: #0a0f17; border: 1px solid #263348; border-radius: 7px; color: #eef3fb; font-size: 11px; padding: 9px 10px; width: 100%; }
 .user-create-form .primary-studio-button { margin-top: 3px; width: 100%; }
+.admin-password-notice { align-items: center; background: rgba(244, 201, 93, .07); border: 1px solid rgba(244, 201, 93, .16); border-radius: 8px; display: flex; gap: 9px; padding: 10px; }
+.admin-password-notice > i { align-items: center; background: rgba(244, 201, 93, .12); border-radius: 50%; color: #f4c95d; display: flex; flex: 0 0 28px; font-size: 13px; font-style: normal; height: 28px; justify-content: center; }
+.admin-password-notice b, .admin-password-notice small { display: block; }
+.admin-password-notice b { color: #d9c98f; font-size: 9px; }
+.admin-password-notice small { color: #7d7661; font-size: 7px; line-height: 1.5; margin-top: 3px; }
+.admin-password-encryption { color: #607089; display: block; font-size: 7px; line-height: 1.5; text-align: center; }
 .user-search { display: block; margin-top: 14px; }
 .user-search > span { color: #718096; display: block; font-size: 8px; margin-bottom: 6px; }
 .user-search input { background: #0a0f17; border: 1px solid #263348; border-radius: 7px; color: #eef3fb; font-size: 10px; padding: 9px 10px; width: 100%; }
@@ -1014,6 +1020,8 @@ input[type="range"] {
 .managed-user-actions button.danger { border-color: rgba(255, 91, 110, .18); color: #bd6d78; }
 .managed-user-actions button:disabled { cursor: wait; opacity: .5; }
 .managed-user-protected { color: #706b5d; font-size: 7px; text-align: right; white-space: nowrap; }
+.managed-user-protected.current { align-items: center; display: flex; gap: 7px; }
+.managed-user-protected button { background: rgba(244, 201, 93, .07); border: 1px solid rgba(244, 201, 93, .18); border-radius: 5px; color: #c3aa62; cursor: pointer; font-size: 8px; min-height: 30px; padding: 5px 8px; }
 .studio-header { align-items: flex-start; background: linear-gradient(135deg, rgba(76, 141, 255, .12), rgba(179, 140, 255, .05)); border-bottom: 1px solid #222d3e; display: flex; justify-content: space-between; padding: 20px 24px; }
 .studio-header span { color: #7185a4; font-family: var(--font-geist-mono), monospace; font-size: 8px; font-weight: 700; letter-spacing: .16em; }
 .studio-header h2 { font-size: 20px; margin: 5px 0 3px; }
@@ -1696,6 +1704,11 @@ input[type="range"] {
   .managed-user-actions { display: grid; gap: 7px; grid-column: 1 / -1; grid-template-columns: 1fr 1fr; width: 100%; }
   .managed-user-actions button { font-size: 11px; min-height: 44px; }
   .managed-user-protected { grid-column: 1 / -1; text-align: left; }
+  .managed-user-protected.current { justify-content: space-between; width: 100%; }
+  .managed-user-protected button { font-size: 11px; min-height: 44px; padding-inline: 16px; }
+  .admin-password-notice { padding: 12px; }
+  .admin-password-notice b { font-size: 11px; }
+  .admin-password-notice small, .admin-password-encryption { font-size: 9px; }
 
   .paper-account-studio { height: 100dvh; }
   .paper-toolbar { flex: 0 0 auto; gap: 7px; padding: 9px 10px; }

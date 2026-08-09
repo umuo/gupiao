@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 
 const LOGIN_CHALLENGE_COOKIE = "paper_alpha_login_challenge";
+const LOGIN_CHALLENGE_COOKIE_PATH = "/api/auth/login";
 const LOGIN_CHALLENGE_SECONDS = 120;
 const LOGIN_ENVELOPE_VERSION = "v1";
 
@@ -22,6 +23,7 @@ export type LoginEnvelope = {
 type LoginCredentials = {
   email: string;
   password: string;
+  newPassword?: string;
   challenge: string;
   issuedAt: number;
 };
@@ -78,11 +80,11 @@ async function loginPrivateKey(jwk: LoginPrivateJwk, source: string) {
   return cachedPrivateKey;
 }
 
-export function clearLoginChallengeCookie(request: Request) {
-  return `${LOGIN_CHALLENGE_COOKIE}=; Path=/api/auth/login; HttpOnly; SameSite=Strict; Max-Age=0${secureCookieSuffix(request)}`;
+export function clearLoginChallengeCookie(request: Request, cookiePath = LOGIN_CHALLENGE_COOKIE_PATH) {
+  return `${LOGIN_CHALLENGE_COOKIE}=; Path=${cookiePath}; HttpOnly; SameSite=Strict; Max-Age=0${secureCookieSuffix(request)}`;
 }
 
-export async function createLoginEncryptionOffer(request: Request) {
+export async function createLoginEncryptionOffer(request: Request, cookiePath = LOGIN_CHALLENGE_COOKIE_PATH) {
   const { parsed } = privateJwk();
   const keyId = await keyIdFor(parsed);
   const challenge = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(24)));
@@ -102,7 +104,7 @@ export async function createLoginEncryptionOffer(request: Request) {
         key_ops: ["encrypt"],
       } satisfies JsonWebKey,
     },
-    cookie: `${LOGIN_CHALLENGE_COOKIE}=${keyId}.${challenge}; Path=/api/auth/login; HttpOnly; SameSite=Strict; Max-Age=${LOGIN_CHALLENGE_SECONDS}${secureCookieSuffix(request)}`,
+    cookie: `${LOGIN_CHALLENGE_COOKIE}=${keyId}.${challenge}; Path=${cookiePath}; HttpOnly; SameSite=Strict; Max-Age=${LOGIN_CHALLENGE_SECONDS}${secureCookieSuffix(request)}`,
   };
 }
 
@@ -132,6 +134,7 @@ export async function decryptLoginEnvelope(request: Request, envelope: LoginEnve
   return {
     email: String(credentials.email ?? ""),
     password: String(credentials.password ?? ""),
+    newPassword: credentials.newPassword === undefined ? undefined : String(credentials.newPassword),
     challenge: String(credentials.challenge ?? ""),
     issuedAt: Number(credentials.issuedAt),
   };

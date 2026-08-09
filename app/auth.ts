@@ -108,6 +108,10 @@ export async function createSession(userId: string, request: Request) {
 export async function deleteSession(request: Request) {
   const token = sessionTokenFrom(request);
   if (token) await getDb().delete(sessions).where(eq(sessions.id, await sha256(token)));
+  return clearSessionCookie(request);
+}
+
+export function clearSessionCookie(request: Request) {
   const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
   return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
 }

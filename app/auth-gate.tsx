@@ -1,47 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { encryptAuthCredentials } from "./auth-crypto-client";
 
 type AuthUser = { userId: string; displayName: string; email: string; role: "user" | "superadmin" };
-type LoginEncryptionOffer = {
-  version: string;
-  keyId: string;
-  challenge: string;
-  publicKey: JsonWebKey;
-  error?: string;
-};
-
-function bytesToBase64Url(value: ArrayBuffer | Uint8Array) {
-  const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
-}
-
-async function encryptLoginCredentials(email: string, password: string) {
-  const keyResponse = await fetch("/api/auth/login", { cache: "no-store", credentials: "same-origin" });
-  const offer = await keyResponse.json() as LoginEncryptionOffer;
-  if (!keyResponse.ok || !offer.publicKey || !offer.challenge || !offer.keyId) throw new Error(offer.error || "无法初始化登录加密");
-
-  const rsaKey = await crypto.subtle.importKey("jwk", offer.publicKey, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
-  const aesKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"]);
-  const rawAesKey = await crypto.subtle.exportKey("raw", aesKey);
-  const encryptedKey = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, rsaKey, rawAesKey);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const plaintext = new TextEncoder().encode(JSON.stringify({ email, password, challenge: offer.challenge, issuedAt: Date.now() }));
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv, additionalData: new TextEncoder().encode(offer.keyId) },
-    aesKey,
-    plaintext,
-  );
-  return {
-    version: offer.version,
-    keyId: offer.keyId,
-    encryptedKey: bytesToBase64Url(encryptedKey),
-    iv: bytesToBase64Url(iv),
-    ciphertext: bytesToBase64Url(ciphertext),
-  };
-}
 
 export function AuthGate({ adminReady, onAuthenticated }: { adminReady: boolean; onAuthenticated: (user: AuthUser) => void }) {
   const [email, setEmail] = useState("");
@@ -52,7 +14,7 @@ export function AuthGate({ adminReady, onAuthenticated }: { adminReady: boolean;
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setLoading(true); setError("");
     try {
-      const encryptedCredentials = await encryptLoginCredentials(email, password);
+      const encryptedCredentials = await encryptAuthCredentials({ email, password });
       const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(encryptedCredentials) });
       const payload = await response.json() as { user?: AuthUser; error?: string };
       if (!response.ok || !payload.user) throw new Error(payload.error || "登录失败");

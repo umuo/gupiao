@@ -36,11 +36,13 @@ test("builds the strategy automation and realtime configuration surfaces", async
 });
 
 test("keeps public registration closed and initializes the administrator securely", async () => {
-  const [authGate, auth, loginCrypto, loginRoute, adminUsersRoute, userManagement] = await Promise.all([
+  const [authGate, authCryptoClient, auth, loginCrypto, loginRoute, passwordRoute, adminUsersRoute, userManagement] = await Promise.all([
     read("app/auth-gate.tsx"),
+    read("app/auth-crypto-client.ts"),
     read("app/auth.ts"),
     read("app/login-crypto.ts"),
     read("app/api/auth/login/route.ts"),
+    read("app/api/auth/password/route.ts"),
     read("app/api/admin/users/route.ts"),
     read("app/user-management.tsx"),
   ]);
@@ -49,13 +51,23 @@ test("keeps public registration closed and initializes the administrator securel
   await assert.rejects(read("app/api/auth/register/route.ts"), { code: "ENOENT" });
   assert.match(auth, /DEFAULT_ADMIN_PASSWORD/);
   assert.match(auth, /ensureDefaultAdmin/);
-  assert.match(authGate, /RSA-OAEP/);
-  assert.match(authGate, /AES-GCM/);
+  assert.match(authGate, /encryptAuthCredentials/);
+  assert.match(authCryptoClient, /RSA-OAEP/);
+  assert.match(authCryptoClient, /AES-GCM/);
   assert.doesNotMatch(authGate, /JSON\.stringify\(\{ email, password \}\)/);
   assert.match(loginCrypto, /LOGIN_PRIVATE_KEY_JWK/);
   assert.match(loginCrypto, /LOGIN_CHALLENGE_SECONDS/);
   assert.match(loginRoute, /decryptLoginEnvelope/);
   assert.doesNotMatch(loginRoute, /payload\.password/);
+  assert.match(passwordRoute, /admin\.role !== "superadmin"/);
+  assert.match(passwordRoute, /export async function GET/);
+  assert.match(passwordRoute, /createLoginEncryptionOffer\(request, PASSWORD_CHALLENGE_PATH\)/);
+  assert.match(passwordRoute, /verifyPassword\(currentPassword/);
+  assert.match(passwordRoute, /管理员新密码需要12到128位/);
+  assert.match(passwordRoute, /新密码不能与当前密码相同/);
+  assert.match(passwordRoute, /db\.batch/);
+  assert.match(passwordRoute, /db\.delete\(sessions\)/);
+  assert.match(passwordRoute, /clearSessionCookie/);
   assert.match(adminUsersRoute, /admin\.role !== "superadmin"/);
   assert.match(adminUsersRoute, /role: "user"/);
   assert.match(adminUsersRoute, /export async function PATCH/);
@@ -67,6 +79,11 @@ test("keeps public registration closed and initializes the administrator securel
   assert.match(userManagement, /查找用户/);
   assert.match(userManagement, /重置密码（可选）/);
   assert.match(userManagement, /永久删除/);
+  assert.match(userManagement, /修改管理员密码/);
+  assert.match(userManagement, /当前管理员密码/);
+  assert.match(userManagement, /修改密码并退出所有设备/);
+  assert.match(userManagement, /encryptAuthCredentials/);
+  assert.doesNotMatch(userManagement, /body: JSON\.stringify\(\{ currentAdminPassword/);
 });
 
 test("keeps TickFlow credentials protected and persists notification state", async () => {
