@@ -1,6 +1,8 @@
 APP_ENCRYPTION_KEY="replace-with-a-long-random-secret"
 CRON_SECRET="replace-with-another-random-secret"
 DEFAULT_ADMIN_PASSWORD="replace-with-a-unique-password-of-at-least-12-characters"
+# RSA private JWK used only by the server to decrypt hybrid-encrypted login requests.
+LOGIN_PRIVATE_KEY_JWK='{"kty":"RSA","n":"...","e":"AQAB","d":"...","p":"...","q":"...","dp":"...","dq":"...","qi":"...","alg":"RSA-OAEP-256","ext":true,"key_ops":["decrypt"]}'
 # Optional overrides; defaults are admin@gupiao.local and 系统管理员.
 # DEFAULT_ADMIN_EMAIL="admin@example.com"
 # DEFAULT_ADMIN_NAME="系统管理员"

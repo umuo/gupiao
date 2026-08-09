@@ -6,5 +6,6 @@ declare module "cloudflare:workers" {
     DEFAULT_ADMIN_EMAIL?: string;
     DEFAULT_ADMIN_NAME?: string;
     DEFAULT_ADMIN_PASSWORD?: string;
+    LOGIN_PRIVATE_KEY_JWK?: string;
   };
 }

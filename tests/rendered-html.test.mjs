@@ -36,9 +36,11 @@ test("builds the strategy automation and realtime configuration surfaces", async
 });
 
 test("keeps public registration closed and initializes the administrator securely", async () => {
-  const [authGate, auth, adminUsersRoute] = await Promise.all([
+  const [authGate, auth, loginCrypto, loginRoute, adminUsersRoute] = await Promise.all([
     read("app/auth-gate.tsx"),
     read("app/auth.ts"),
+    read("app/login-crypto.ts"),
+    read("app/api/auth/login/route.ts"),
     read("app/api/admin/users/route.ts"),
   ]);
   assert.match(authGate, /系统已关闭公开注册/);
@@ -46,6 +48,13 @@ test("keeps public registration closed and initializes the administrator securel
   await assert.rejects(read("app/api/auth/register/route.ts"), { code: "ENOENT" });
   assert.match(auth, /DEFAULT_ADMIN_PASSWORD/);
   assert.match(auth, /ensureDefaultAdmin/);
+  assert.match(authGate, /RSA-OAEP/);
+  assert.match(authGate, /AES-GCM/);
+  assert.doesNotMatch(authGate, /JSON\.stringify\(\{ email, password \}\)/);
+  assert.match(loginCrypto, /LOGIN_PRIVATE_KEY_JWK/);
+  assert.match(loginCrypto, /LOGIN_CHALLENGE_SECONDS/);
+  assert.match(loginRoute, /decryptLoginEnvelope/);
+  assert.doesNotMatch(loginRoute, /payload\.password/);
   assert.match(adminUsersRoute, /admin\.role !== "superadmin"/);
   assert.match(adminUsersRoute, /role: "user"/);
 });

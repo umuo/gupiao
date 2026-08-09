@@ -33,6 +33,11 @@ Paper Alpha includes its own email-and-password account system and does not
 depend on ChatGPT, OpenAI workspace headers, or an external identity provider.
 Passwords are stored as salted PBKDF2-SHA256 hashes. Login sessions use random
 tokens in `HttpOnly`, `SameSite=Lax` cookies; only token hashes are stored in D1.
+Before submitting a login, the browser obtains a short-lived challenge and the
+server's RSA public key. It then encrypts the complete credential payload with
+AES-256-GCM and wraps the one-time AES key with RSA-OAEP-SHA256. The login API
+accepts only this encrypted envelope. Configure the matching private JWK as the
+`LOGIN_PRIVATE_KEY_JWK` runtime secret; it is never returned to the browser.
 
 The `DB` binding is required for users, sessions, personal strategies, and AI
 endpoint preferences. Apply the generated migrations in `drizzle/` when
@@ -67,7 +72,8 @@ create two kinds of strategy tasks:
 Realtime API keys are encrypted with AES-GCM before being stored in D1. Copy
 `.dev.vars.example` to `.dev.vars` for local development. In an independent
 deployment, configure long random values for `APP_ENCRYPTION_KEY` and
-`CRON_SECRET` as Worker secrets; do not commit production values. The Worker
+`CRON_SECRET`, plus the RSA private JWK in `LOGIN_PRIVATE_KEY_JWK`, as Worker
+secrets; do not commit production values. The Worker
 includes a once-per-minute scheduled handler. An external scheduler can instead
 call `POST /api/cron/run` with `Authorization: Bearer <CRON_SECRET>`.
 
