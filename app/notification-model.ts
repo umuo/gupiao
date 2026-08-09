@@ -13,6 +13,7 @@ export const defaultMessageTemplate = `{
   "stock": "{{stockName}}",
   "symbol": "{{symbol}}",
   "strategy": "{{strategyName}}",
+  "paper_account": "{{paperAccountName}}",
   "price": {{price}},
   "reason": "{{reason}}",
   "time": "{{marketTime}}"
@@ -21,14 +22,14 @@ export const defaultMessageTemplate = `{
 export const dingtalkMessageTemplate = `{
   "msgtype": "text",
   "text": {
-    "content": "【Paper Alpha】{{actionText}}提醒\\n股票：{{stockName}}（{{symbol}}）\\n策略：{{strategyName}}\\n价格：{{price}}\\n原因：{{reason}}\\n时间：{{marketTime}}"
+    "content": "【Paper Alpha】{{actionText}}提醒\\n任务：{{automationName}}\\n股票：{{stockName}}（{{symbol}}）\\n策略：{{strategyName}}\\n成交价：{{executionPrice}}\\n原因：{{reason}}\\n时间：{{marketTime}}"
   }
 }`;
 
 export const feishuMessageTemplate = `{
   "msg_type": "text",
   "content": {
-    "text": "【Paper Alpha】{{actionText}}提醒\\n股票：{{stockName}}（{{symbol}}）\\n策略：{{strategyName}}\\n价格：{{price}}\\n原因：{{reason}}\\n时间：{{marketTime}}"
+    "text": "【Paper Alpha】{{actionText}}提醒\\n任务：{{automationName}}\\n股票：{{stockName}}（{{symbol}}）\\n策略：{{strategyName}}\\n成交价：{{executionPrice}}\\n原因：{{reason}}\\n时间：{{marketTime}}"
   }
 }`;
 

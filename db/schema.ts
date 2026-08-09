@@ -38,6 +38,92 @@ export const userSettings = sqliteTable("user_settings", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const paperAccounts = sqliteTable("paper_accounts", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  symbol: text("symbol").notNull(),
+  stockName: text("stock_name").notNull(),
+  strategyId: text("strategy_id").notNull(),
+  strategyName: text("strategy_name").notNull(),
+  strategyDefinition: text("strategy_definition").notNull(),
+  initialCapital: real("initial_capital").notNull(),
+  cash: real("cash").notNull(),
+  realizedPnl: real("realized_pnl").notNull().default(0),
+  positionPercent: real("position_percent").notNull().default(30),
+  stopLoss: real("stop_loss").notNull().default(8),
+  takeProfit: real("take_profit").notNull().default(22),
+  commissionRate: real("commission_rate").notNull().default(0.00025),
+  slippageRate: real("slippage_rate").notNull().default(0.001),
+  status: text("status", { enum: ["active", "paused"] }).notNull().default("active"),
+  lastPrice: real("last_price"),
+  lastValuationDate: text("last_valuation_date"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("idx_paper_accounts_user_name").on(table.userId, table.name),
+  index("idx_paper_accounts_user_created").on(table.userId, table.createdAt),
+]);
+
+export const paperPositions = sqliteTable("paper_positions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  paperAccountId: text("paper_account_id").notNull(),
+  symbol: text("symbol").notNull(),
+  stockName: text("stock_name").notNull(),
+  shares: integer("shares").notNull(),
+  averageCost: real("average_cost").notNull(),
+  lastPrice: real("last_price").notNull(),
+  openedAt: text("opened_at").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("idx_paper_positions_account_symbol").on(table.paperAccountId, table.symbol),
+  index("idx_paper_positions_user_id").on(table.userId),
+]);
+
+export const paperTrades = sqliteTable("paper_trades", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  paperAccountId: text("paper_account_id").notNull(),
+  automationId: text("automation_id"),
+  action: text("action", { enum: ["buy", "sell"] }).notNull(),
+  symbol: text("symbol").notNull(),
+  stockName: text("stock_name").notNull(),
+  shares: integer("shares").notNull(),
+  signalPrice: real("signal_price").notNull(),
+  executionPrice: real("execution_price").notNull(),
+  grossAmount: real("gross_amount").notNull(),
+  commission: real("commission").notNull(),
+  realizedPnl: real("realized_pnl").notNull().default(0),
+  reason: text("reason").notNull().default(""),
+  barTimestamp: integer("bar_timestamp").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  executedAt: text("executed_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("idx_paper_trades_account_idempotency").on(table.paperAccountId, table.idempotencyKey),
+  index("idx_paper_trades_account_executed").on(table.paperAccountId, table.executedAt),
+  index("idx_paper_trades_user_executed").on(table.userId, table.executedAt),
+]);
+
+export const paperEquitySnapshots = sqliteTable("paper_equity_snapshots", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  paperAccountId: text("paper_account_id").notNull(),
+  snapshotDate: text("snapshot_date").notNull(),
+  equity: real("equity").notNull(),
+  cash: real("cash").notNull(),
+  marketValue: real("market_value").notNull(),
+  totalReturn: real("total_return").notNull(),
+  realizedPnl: real("realized_pnl").notNull().default(0),
+  unrealizedPnl: real("unrealized_pnl").notNull().default(0),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("idx_paper_equity_account_date").on(table.paperAccountId, table.snapshotDate),
+  index("idx_paper_equity_user_date").on(table.userId, table.snapshotDate),
+]);
+
 export const notificationChannels = sqliteTable("notification_channels", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull(),
@@ -58,6 +144,7 @@ export const notificationChannels = sqliteTable("notification_channels", {
 export const automations = sqliteTable("automations", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull(),
+  paperAccountId: text("paper_account_id"),
   name: text("name").notNull(),
   symbol: text("symbol").notNull(),
   stockName: text("stock_name").notNull(),
@@ -84,6 +171,7 @@ export const automations = sqliteTable("automations", {
 }, (table) => [
   index("idx_automations_user_id").on(table.userId),
   index("idx_automations_enabled_time").on(table.enabled, table.runTime),
+  uniqueIndex("idx_automations_paper_account_id").on(table.paperAccountId),
 ]);
 
 export const automationNotificationChannels = sqliteTable("automation_notification_channels", {

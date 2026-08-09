@@ -87,3 +87,40 @@ test("keeps TickFlow credentials protected and persists notification state", asy
   assert.match(delivery, /headersEncrypted/);
   assert.match(delivery, /renderMessageTemplate/);
 });
+
+test("persists paper accounts and keeps simulated execution independent from notification delivery", async () => {
+  const [schema, migration, center, accountRoute, refreshRoute, service, runner, tasks, page] = await Promise.all([
+    read("db/schema.ts"),
+    read("drizzle/0006_nostalgic_franklin_storm.sql"),
+    read("app/paper-account-center.tsx"),
+    read("app/api/paper-accounts/route.ts"),
+    read("app/api/paper-accounts/refresh/route.ts"),
+    read("app/paper-account-service.ts"),
+    read("app/automation-runner.ts"),
+    read("app/task-center.tsx"),
+    read("app/page.tsx"),
+  ]);
+  assert.match(schema, /paperAccounts/);
+  assert.match(schema, /paperPositions/);
+  assert.match(schema, /paperTrades/);
+  assert.match(schema, /paperEquitySnapshots/);
+  assert.match(schema, /paperAccountId: text\("paper_account_id"\)/);
+  assert.match(migration, /CREATE TABLE .*paper_accounts/);
+  assert.match(migration, /idx_paper_trades_account_idempotency/);
+  assert.match(migration, /PRAGMA optimize/);
+  assert.match(accountRoute, /export async function GET/);
+  assert.match(accountRoute, /export async function POST/);
+  assert.match(accountRoute, /export async function PATCH/);
+  assert.match(accountRoute, /export async function DELETE/);
+  assert.match(refreshRoute, /fetchTickFlowKlines/);
+  assert.match(service, /executePaperSignal/);
+  assert.match(service, /db\.batch/);
+  assert.ok(runner.indexOf("executePaperSignal") < runner.indexOf("deliverNotification(channel"));
+  assert.doesNotMatch(runner, /所有通知渠道均投递失败/);
+  assert.match(center, /更新今日收益/);
+  assert.match(center, /配置定时任务/);
+  assert.match(tasks, /targetAccount/);
+  assert.match(tasks, /关联模拟盘/);
+  assert.match(page, /我的模拟盘/);
+  assert.match(page, /临时回测资金/);
+});

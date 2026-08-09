@@ -57,6 +57,22 @@ implement `POST /chat/completions`. The API key is never written to the database
 or source code; it stays in the current page session and is sent only to the
 server-side proxy for the generation request.
 
+## Persistent Paper Accounts
+
+Each signed-in user can create up to 20 independent paper accounts. A paper
+account owns its initial capital, cash ledger, strategy snapshot, risk settings,
+position, immutable trade history, and one daily equity snapshot. Core inputs
+(capital, symbol, and strategy) become read-only after the first trade so a
+historical return series cannot silently change meaning.
+
+Paper accounts do not require an automation. The paper-account center can value
+every account with the latest TickFlow daily close. An optional one-to-one
+automation can execute strategy signals against the account's cash and position
+ledger, record a simulated fill with commission and slippage, and then deliver
+the buy or sell notice through any selected notification channels. Simulated
+fills are committed independently of delivery, so a failed Webhook cannot cause
+the same trade to run again.
+
 ## Scheduled Signals and Webhooks
 
 Scheduled tasks and notification channels are independent. A task selects one

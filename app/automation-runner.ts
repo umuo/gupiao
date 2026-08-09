@@ -3,6 +3,7 @@ import { getDb } from "../db";
 import { automationNotificationChannels, automations, notificationChannels, notificationLogs, userSettings } from "../db/schema";
 import { deliverNotification } from "./notification-delivery";
 import { decryptSecret } from "./secret-box";
+import { executePaperSignal, paperAccountState, paperStrategyFrom } from "./paper-account-service";
 import { signalFor, type Kline, type SignalStrategy } from "./strategy-engine";
 import { fetchTickFlowKlines, fetchTickFlowQuote } from "./tickflow-client";
 
@@ -129,14 +130,21 @@ export async function recordAutomationError(row: AutomationRow, error: unknown) 
 export async function runAutomation(row: AutomationRow) {
   const now = new Date();
   const clock = shanghaiClock(now);
-  let bars = await fetchTickFlowKlines(row.symbol, 220);
+  const paperState = row.paperAccountId ? await paperAccountState(row.paperAccountId, row.userId) : null;
+  if (row.paperAccountId && !paperState) throw new Error("关联的模拟盘不存在");
+  if (paperState?.account.status === "paused") throw new Error("关联的模拟盘已暂停");
+  const symbol = paperState?.account.symbol ?? row.symbol;
+  const stockName = paperState?.account.stockName ?? row.stockName;
+  const stopLoss = paperState?.account.stopLoss ?? row.stopLoss;
+  const takeProfit = paperState?.account.takeProfit ?? row.takeProfit;
+  let bars = await fetchTickFlowKlines(symbol, 220);
   let source = "TickFlow 免费历史日K";
 
   if (row.dataMode === "realtime") {
     if (!weekdaysOf(row).includes(clock.weekday) || !inMainlandTradingSession(clock.minuteOfDay)) throw new Error("当前不在 A 股连续竞价时段，本次不检查实时信号");
     const [settings] = await getDb().select().from(userSettings).where(eq(userSettings.userId, row.userId)).limit(1);
     if (!settings?.tickflowApiKeyEncrypted) throw new Error("请先在定时任务的实时数据中配置 TickFlow Key");
-    const quote = await fetchTickFlowQuote(row.symbol, await decryptSecret(settings.tickflowApiKeyEncrypted));
+    const quote = await fetchTickFlowQuote(symbol, await decryptSecret(settings.tickflowApiKeyEncrypted));
     if (shanghaiClock(new Date(quote.timestamp)).date !== clock.date) throw new Error("TickFlow 返回的不是今日实时行情，本次不触发信号");
     bars = mergeQuoteIntoDailyBars(bars, quote);
     source = "TickFlow 实时行情";
@@ -144,25 +152,27 @@ export async function runAutomation(row: AutomationRow) {
 
   const bar = bars.at(-1);
   if (!bar || bars.length < 22) throw new Error("可用K线不足，暂时无法计算策略");
-  const strategy = strategyFrom(row);
+  const strategy = paperState ? paperStrategyFrom(paperState.account) : strategyFrom(row);
+  const isHolding = paperState ? Boolean(paperState.position) : row.positionState === "holding";
+  const entryPrice = paperState?.position?.averageCost ?? row.entryPrice;
   let action: "buy" | "sell" | null = null;
   let reason = "";
 
-  if (row.positionState === "flat") {
+  if (!isHolding) {
     const buy = signalFor(strategy, bars, bars.length - 1, "buy");
     if (buy.active) {
       action = "buy";
       reason = buy.reason;
     }
   } else {
-    const returnRate = row.entryPrice ? (bar.close / row.entryPrice - 1) * 100 : 0;
+    const returnRate = entryPrice ? (bar.close / entryPrice - 1) * 100 : 0;
     const sell = signalFor(strategy, bars, bars.length - 1, "sell");
-    if (row.entryPrice && returnRate <= -row.stopLoss) {
+    if (entryPrice && returnRate <= -stopLoss) {
       action = "sell";
-      reason = `触发 ${row.stopLoss}% 止损`;
-    } else if (row.entryPrice && returnRate >= row.takeProfit) {
+      reason = `触发 ${stopLoss}% 止损`;
+    } else if (entryPrice && returnRate >= takeProfit) {
       action = "sell";
-      reason = `触发 ${row.takeProfit}% 止盈`;
+      reason = `触发 ${takeProfit}% 止盈`;
     } else if (sell.active) {
       action = "sell";
       reason = sell.reason;
@@ -186,11 +196,35 @@ export async function runAutomation(row: AutomationRow) {
     return { action: null, price: bar.close, reason: "相同信号今日已通知", source };
   }
 
+  const execution = paperState && row.paperAccountId ? await executePaperSignal({
+    accountId: row.paperAccountId,
+    userId: row.userId,
+    automationId: row.id,
+    action,
+    signalPrice: bar.close,
+    reason,
+    barTimestamp: bar.timestamp,
+    signalKey: `${row.id}:${signalKey}`,
+  }) : null;
+  if (execution && !execution.executed) {
+    await getDb().update(automations).set({ ...commonUpdate, lastSignalKey: signalKey }).where(eq(automations.id, row.id));
+    return { action: null, price: bar.close, reason: execution.reason, source, execution };
+  }
+
   const mappings = await getDb().select({ channelId: automationNotificationChannels.notificationChannelId }).from(automationNotificationChannels).where(and(eq(automationNotificationChannels.automationId, row.id), eq(automationNotificationChannels.userId, row.userId)));
   const channelIds = mappings.map((mapping) => mapping.channelId);
-  if (!channelIds.length) throw new Error("该任务尚未选择通知渠道");
-  const channels = await getDb().select().from(notificationChannels).where(and(eq(notificationChannels.userId, row.userId), inArray(notificationChannels.id, channelIds)));
-  if (!channels.length) throw new Error("任务关联的通知渠道均不存在");
+  const channels = channelIds.length ? await getDb().select().from(notificationChannels).where(and(eq(notificationChannels.userId, row.userId), inArray(notificationChannels.id, channelIds))) : [];
+
+  if (!channels.length) {
+    await writeLog(row, { type: "error", status: "failed", price: execution?.executionPrice ?? bar.close, reason: "模拟成交已记录，但任务没有可用的通知渠道" });
+    await getDb().update(automations).set({
+      ...commonUpdate,
+      lastSignalKey: signalKey,
+      positionState: action === "buy" ? "holding" : "flat",
+      entryPrice: action === "buy" ? execution?.executionPrice ?? bar.close : null,
+    }).where(eq(automations.id, row.id));
+    return { action, price: execution?.executionPrice ?? bar.close, reason, source, execution, deliveries: { total: channelIds.length, succeeded: 0, failed: channelIds.length }, warning: "模拟成交已记录，但没有可用的通知渠道" };
+  }
 
   const payload = {
     event: `strategy.${action}`,
@@ -198,11 +232,17 @@ export async function runAutomation(row: AutomationRow) {
     actionText: action === "buy" ? "买入" : "卖出",
     automationId: row.id,
     automationName: row.name,
-    symbol: row.symbol,
-    stockName: row.stockName,
+    symbol,
+    stockName,
     strategyId: row.strategyId,
     strategyName: row.strategyName,
-    price: bar.close,
+    price: execution?.executionPrice ?? bar.close,
+    signalPrice: bar.close,
+    executionPrice: execution?.executionPrice ?? bar.close,
+    simulatedShares: execution?.shares ?? null,
+    simulatedEquity: execution?.currentEquity ?? null,
+    paperAccountId: row.paperAccountId,
+    paperAccountName: paperState?.account.name ?? null,
     reason,
     dataMode: row.dataMode,
     source,
@@ -237,21 +277,14 @@ export async function runAutomation(row: AutomationRow) {
   }));
   const succeeded = deliveryResults.filter(Boolean).length;
   const missing = Math.max(0, channelIds.length - channels.length);
-  if (!succeeded) {
-    await getDb().update(automations).set({ ...commonUpdate, lastRunDate: row.dataMode === "daily" ? null : row.lastRunDate }).where(eq(automations.id, row.id));
-    const deliveryError = new Error("所有通知渠道均投递失败");
-    deliveryError.name = "AutomationDeliveryError";
-    throw deliveryError;
-  }
-
   await getDb().update(automations).set({
     ...commonUpdate,
     lastSignalKey: signalKey,
-    lastNotifiedAt: now.toISOString(),
+    lastNotifiedAt: succeeded ? now.toISOString() : row.lastNotifiedAt,
     positionState: action === "buy" ? "holding" : "flat",
-    entryPrice: action === "buy" ? bar.close : null,
+    entryPrice: action === "buy" ? execution?.executionPrice ?? bar.close : null,
   }).where(eq(automations.id, row.id));
-  return { action, price: bar.close, reason, source, deliveries: { total: channelIds.length, succeeded, failed: deliveryResults.length - succeeded + missing } };
+  return { action, price: execution?.executionPrice ?? bar.close, reason, source, execution, deliveries: { total: channelIds.length, succeeded, failed: deliveryResults.length - succeeded + missing } };
 }
 
 export async function runDueAutomations() {
