@@ -6,6 +6,7 @@ import { decryptSecret } from "./secret-box";
 import { executePaperSignal, paperAccountState, paperStrategyFrom, refreshPaperAccountValuation, shanghaiDate } from "./paper-account-service";
 import { signalFor, type Kline, type SignalStrategy } from "./strategy-engine";
 import { fetchTickFlowKlines, fetchTickFlowQuote } from "./tickflow-client";
+import { APP_TIME_ZONE, toAppIsoString } from "./timezone";
 
 type AutomationRow = typeof automations.$inferSelect;
 
@@ -19,7 +20,7 @@ const weekdayMap: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri
 
 function shanghaiClock(date = new Date()): ShanghaiClock {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
+    timeZone: APP_TIME_ZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -249,8 +250,8 @@ export async function runAutomation(row: AutomationRow) {
     reason,
     dataMode: row.dataMode,
     source,
-    marketTime: new Date(bar.timestamp).toISOString(),
-    sentAt: now.toISOString(),
+    marketTime: toAppIsoString(bar.timestamp),
+    sentAt: toAppIsoString(now),
     notice: "仅为模拟策略信号，不构成投资建议或真实委托。",
   };
   const deliveryResults = await Promise.all(channels.map(async (channel) => {

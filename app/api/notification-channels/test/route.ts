@@ -3,6 +3,7 @@ import { getDb } from "../../../../db";
 import { notificationChannels, notificationLogs } from "../../../../db/schema";
 import { getAppUser } from "../../../auth";
 import { deliverNotification } from "../../../notification-delivery";
+import { toAppIsoString } from "../../../timezone";
 
 export async function POST(request: Request) {
   const user = await getAppUser(request);
@@ -23,8 +24,8 @@ export async function POST(request: Request) {
     reason: "这是一条通知渠道测试消息",
     dataMode: "test",
     source: "Paper Alpha",
-    marketTime: now.toISOString(),
-    sentAt: now.toISOString(),
+    marketTime: toAppIsoString(now),
+    sentAt: toAppIsoString(now),
   };
   try {
     const result = await deliverNotification(channel, variables);

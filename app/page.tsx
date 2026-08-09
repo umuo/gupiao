@@ -9,6 +9,7 @@ import { average, signalFor, standardDeviation, type Kline } from "./strategy-en
 import { StrategyStudio, type StudioMode } from "./strategy-studio";
 import { strategyRuleSummary, type SavedStrategy } from "./strategy-model";
 import { TaskCenter } from "./task-center";
+import { APP_TIME_ZONE } from "./timezone";
 import { UserManagement } from "./user-management";
 
 type WatchItem = {
@@ -84,8 +85,8 @@ const builtinStrategies: Strategy[] = [
   { id: "rsi", name: "RSI 逆转", description: "RSI进入超卖区并出现阳线时尝试反弹交易，RSI修复至62以上时止盈。", summary: "超卖反弹 + RSI 离场", tag: "短线", color: "#b38cff", builtin: true, entryLogic: "and", exitLogic: "or", entryRules: [{ left: "rsi14", operator: "lt", rightType: "value", rightValue: 32 }, { left: "close", operator: "gt", rightType: "indicator", rightIndicator: "open" }], exitRules: [{ left: "rsi14", operator: "gt", rightType: "value", rightValue: 62 }] },
 ];
 
-const dateFormatter = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit" });
-const fullDateFormatter = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" });
+const dateFormatter = new Intl.DateTimeFormat("zh-CN", { timeZone: APP_TIME_ZONE, month: "2-digit", day: "2-digit" });
+const fullDateFormatter = new Intl.DateTimeFormat("zh-CN", { timeZone: APP_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" });
 
 function toSymbol(code: string) {
   if (code.startsWith("6")) return `${code}.SH`;

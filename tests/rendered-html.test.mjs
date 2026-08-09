@@ -168,3 +168,32 @@ test("keeps every product surface reachable and usable on mobile", async () => {
   assert.match(styles, /\.notification-row/);
   assert.match(styles, /\.managed-user-list article/);
 });
+
+test("pins scheduling, notifications, and displayed records to Asia Shanghai", async () => {
+  const [timezone, schema, automationRoute, runner, notificationTest, service, tasks, notifications, paperAccounts, users] = await Promise.all([
+    read("app/timezone.ts"),
+    read("db/schema.ts"),
+    read("app/api/automations/route.ts"),
+    read("app/automation-runner.ts"),
+    read("app/api/notification-channels/test/route.ts"),
+    read("app/paper-account-service.ts"),
+    read("app/task-center.tsx"),
+    read("app/notification-center.tsx"),
+    read("app/paper-account-center.tsx"),
+    read("app/user-management.tsx"),
+  ]);
+  assert.match(timezone, /APP_TIME_ZONE = "Asia\/Shanghai"/);
+  assert.match(timezone, /\+08:00/);
+  assert.match(schema, /timezone: text\("timezone"\).*default\("Asia\/Shanghai"\)/);
+  assert.match(automationRoute, /timezone: APP_TIME_ZONE/);
+  assert.match(runner, /timeZone: APP_TIME_ZONE/);
+  assert.match(runner, /marketTime: toAppIsoString/);
+  assert.match(notificationTest, /marketTime: toAppIsoString/);
+  assert.match(service, /appDateKey/);
+  assert.match(tasks, /所有任务统一使用/);
+  assert.match(tasks, /item\.timezone/);
+  assert.match(notifications, /DELIVERY LOG · ASIA\/SHANGHAI/);
+  assert.match(paperAccounts, /TRADES · ASIA\/SHANGHAI/);
+  const uiTimeRendering = [tasks, notifications, paperAccounts, users].join("\n");
+  assert.doesNotMatch(uiTimeRendering, /new Date\([^\n]*\)\.toLocale(?:Date)?String/);
+});

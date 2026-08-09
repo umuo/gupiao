@@ -3,6 +3,7 @@ import { getDb } from "../../../db";
 import { automationNotificationChannels, automations, notificationChannels, paperAccounts, paperPositions, userSettings } from "../../../db/schema";
 import { getAppUser } from "../../auth";
 import { sanitizeStrategyDraft } from "../../strategy-model";
+import { APP_TIME_ZONE } from "../../timezone";
 
 const SYMBOL_PATTERN = /^\d{6}\.(SH|SZ|BJ)$/;
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
@@ -103,6 +104,7 @@ export async function POST(request: Request) {
       dataMode,
       runTime,
       intervalMinutes,
+      timezone: APP_TIME_ZONE,
       stopLoss,
       takeProfit,
       positionState: initialPositionState,

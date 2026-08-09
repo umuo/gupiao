@@ -2,19 +2,13 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { paperAccounts, paperEquitySnapshots, paperPositions, paperTrades } from "../db/schema";
 import type { SignalStrategy } from "./strategy-engine";
+import { appDateKey } from "./timezone";
 
 type PaperAccountRow = typeof paperAccounts.$inferSelect;
 type PaperPositionRow = typeof paperPositions.$inferSelect;
 
 export function shanghaiDate(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
-  return `${value("year")}-${value("month")}-${value("day")}`;
+  return appDateKey(date);
 }
 
 export function paperStrategyFrom(account: PaperAccountRow): SignalStrategy {

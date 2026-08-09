@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { encryptAuthCredentials } from "./auth-crypto-client";
+import { formatAppDate } from "./timezone";
 
 type ManagedUser = {
   id: string;
@@ -156,7 +157,7 @@ export function UserManagement({ open, onClose, onToast }: {
         <section className="managed-user-list-wrap">
           <div className="automation-section-title"><div><span>ACCOUNTS</span><h3>系统用户</h3></div><button onClick={refresh}>{loading ? "刷新中…" : `${items.length} 人`}</button></div>
           <label className="user-search"><span>查找用户</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="输入昵称或邮箱" /></label>
-          <div className="managed-user-list">{filteredItems.length ? filteredItems.map((item) => <article className={editingId === item.id || (adminPasswordMode && item.isCurrent) ? "editing" : ""} key={item.id}><i>{item.displayName.slice(0, 2).toUpperCase()}</i><div className="managed-user-identity"><b>{item.displayName}</b><small>{item.email}</small></div><span className={item.role}>{item.role === "superadmin" ? "超级管理员" : "普通用户"}</span><time>{new Date(item.createdAt).toLocaleDateString("zh-CN")}</time>{item.role === "superadmin" ? <div className={`managed-user-protected ${item.isCurrent ? "current" : ""}`}><span>{item.isCurrent ? "当前账号 · 受保护" : "受保护"}</span>{item.isCurrent && <button onClick={startAdminPasswordChange}>修改密码</button>}</div> : <div className="managed-user-actions"><button onClick={() => editUser(item)}>编辑</button><button className="danger" disabled={deletingId === item.id} onClick={() => deleteUser(item)}>{deletingId === item.id ? "删除中…" : "删除"}</button></div>}</article>) : <div className="automation-empty"><i>♙</i><b>{loading ? "正在读取用户…" : search ? "没有匹配的用户" : "暂无用户"}</b></div>}</div>
+          <div className="managed-user-list">{filteredItems.length ? filteredItems.map((item) => <article className={editingId === item.id || (adminPasswordMode && item.isCurrent) ? "editing" : ""} key={item.id}><i>{item.displayName.slice(0, 2).toUpperCase()}</i><div className="managed-user-identity"><b>{item.displayName}</b><small>{item.email}</small></div><span className={item.role}>{item.role === "superadmin" ? "超级管理员" : "普通用户"}</span><time>{formatAppDate(item.createdAt)}</time>{item.role === "superadmin" ? <div className={`managed-user-protected ${item.isCurrent ? "current" : ""}`}><span>{item.isCurrent ? "当前账号 · 受保护" : "受保护"}</span>{item.isCurrent && <button onClick={startAdminPasswordChange}>修改密码</button>}</div> : <div className="managed-user-actions"><button onClick={() => editUser(item)}>编辑</button><button className="danger" disabled={deletingId === item.id} onClick={() => deleteUser(item)}>{deletingId === item.id ? "删除中…" : "删除"}</button></div>}</article>) : <div className="automation-empty"><i>♙</i><b>{loading ? "正在读取用户…" : search ? "没有匹配的用户" : "暂无用户"}</b></div>}</div>
         </section>
       </div>
     </section>
