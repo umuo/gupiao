@@ -10,7 +10,7 @@ import { average, standardDeviation, type Kline } from "./strategy-engine";
 import { StrategyStudio, type StudioMode } from "./strategy-studio";
 import { strategyRuleSummary, type SavedStrategy } from "./strategy-model";
 import { TaskCenter } from "./task-center";
-import { APP_TIME_ZONE } from "./timezone";
+import { APP_TIME_ZONE, appDateKey } from "./timezone";
 import { UserManagement } from "./user-management";
 
 type WatchItem = {
@@ -831,8 +831,8 @@ export default function Home() {
     if (!allBars.length) return [];
     if (period === "全部") return allBars;
     if (period === "今年") {
-      const currentYear = new Date().getFullYear();
-      return allBars.filter((bar) => new Date(bar.timestamp).getFullYear() === currentYear);
+      const currentYear = appDateKey().slice(0, 4);
+      return allBars.filter((bar) => appDateKey(bar.timestamp).startsWith(currentYear));
     }
     const sizes: Record<string, number> = { "近1月": 22, "近3月": 66, "近6月": 132 };
     return allBars.slice(-Math.min(allBars.length, sizes[period] ?? 132));

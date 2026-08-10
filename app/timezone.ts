@@ -30,8 +30,16 @@ const timestampFormatter = new Intl.DateTimeFormat("en-CA", {
   hourCycle: "h23",
 });
 
+// SQLite CURRENT_TIMESTAMP is UTC but returns `YYYY-MM-DD HH:mm:ss` without a
+// timezone suffix. Browsers otherwise interpret that value in their own local
+// timezone, so normalize persisted timestamps before formatting them.
+const sqliteUtcTimestamp = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/;
+
 function validDate(value: string | number | Date) {
-  const date = value instanceof Date ? value : new Date(value);
+  const normalized = typeof value === "string" && sqliteUtcTimestamp.test(value.trim())
+    ? `${value.trim().replace(" ", "T")}Z`
+    : value;
+  const date = normalized instanceof Date ? normalized : new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 

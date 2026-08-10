@@ -243,13 +243,14 @@ test("polls account-scoped realtime quotes without exposing the TickFlow key", a
 });
 
 test("pins scheduling, notifications, and displayed records to Asia Shanghai", async () => {
-  const [timezone, schema, automationRoute, runner, notificationTest, service, tasks, notifications, paperAccounts, users] = await Promise.all([
+  const [timezone, schema, automationRoute, runner, notificationTest, service, page, tasks, notifications, paperAccounts, users] = await Promise.all([
     read("app/timezone.ts"),
     read("db/schema.ts"),
     read("app/api/automations/route.ts"),
     read("app/automation-runner.ts"),
     read("app/api/notification-channels/test/route.ts"),
     read("app/paper-account-service.ts"),
+    read("app/page.tsx"),
     read("app/task-center.tsx"),
     read("app/notification-center.tsx"),
     read("app/paper-account-center.tsx"),
@@ -257,12 +258,16 @@ test("pins scheduling, notifications, and displayed records to Asia Shanghai", a
   ]);
   assert.match(timezone, /APP_TIME_ZONE = "Asia\/Shanghai"/);
   assert.match(timezone, /\+08:00/);
+  assert.match(timezone, /sqliteUtcTimestamp/);
+  assert.match(timezone, /replace\(" ", "T"\).*Z/);
   assert.match(schema, /timezone: text\("timezone"\).*default\("Asia\/Shanghai"\)/);
   assert.match(automationRoute, /timezone: APP_TIME_ZONE/);
   assert.match(runner, /timeZone: APP_TIME_ZONE/);
   assert.match(runner, /marketTime: toAppIsoString/);
   assert.match(notificationTest, /marketTime: toAppIsoString/);
   assert.match(service, /appDateKey/);
+  assert.match(page, /appDateKey\(\)\.slice\(0, 4\)/);
+  assert.match(page, /appDateKey\(bar\.timestamp\)\.startsWith\(currentYear\)/);
   assert.match(tasks, /所有任务统一使用/);
   assert.match(tasks, /item\.timezone/);
   assert.match(notifications, /DELIVERY LOG · ASIA\/SHANGHAI/);
