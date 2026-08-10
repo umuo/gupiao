@@ -82,10 +82,16 @@ const initialWatchlist: WatchItem[] = [
 const builtinStrategies: Strategy[] = [
   { id: "rsi", name: "RSI 超卖反弹", description: "RSI进入超卖区并出现阳线时尝试反弹交易，RSI修复至62以上时止盈。", summary: "超卖反弹 + RSI 离场", tag: "短线", color: "#b38cff", builtin: true, horizon: "short", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "rsi14", operator: "lt", rightType: "value", rightValue: 32 }, { left: "close", operator: "gt", rightType: "indicator", rightIndicator: "open" }], exitRules: [{ left: "rsi14", operator: "gt", rightType: "value", rightValue: 62 }] },
   { id: "breakout", name: "放量突破", description: "收盘价突破前20日高点且成交量确认时入场，跌破MA10时离场。", summary: "20 日新高 + 成交量确认", tag: "短线", color: "#ff5b6e", builtin: true, horizon: "short", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "close", operator: "gt", rightType: "indicator", rightIndicator: "highest20" }, { left: "volumeRatio20", operator: "gt", rightType: "value", rightValue: 1.1 }], exitRules: [{ left: "close", operator: "lt", rightType: "indicator", rightIndicator: "ma10" }] },
+  { id: "short-ma5", name: "MA5 回踩反转", description: "价格重新向上穿越MA5且成交量恢复时入场，跌回MA5下方时快速离场。", summary: "重返 MA5 + 量能恢复", tag: "短线", color: "#ff8ea1", builtin: true, horizon: "short", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "close", operator: "crossesAbove", rightType: "indicator", rightIndicator: "ma5" }, { left: "volumeRatio20", operator: "gt", rightType: "value", rightValue: 1 }], exitRules: [{ left: "close", operator: "crossesBelow", rightType: "indicator", rightIndicator: "ma5" }] },
+  { id: "short-acceleration", name: "量价加速", description: "价格创20日新高且量比明显放大时追踪强势行情，趋势减速或RSI过热时退出。", summary: "新高 + 量比 1.5", tag: "短线", color: "#ff9f43", builtin: true, horizon: "short", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "close", operator: "gt", rightType: "indicator", rightIndicator: "highest20" }, { left: "volumeRatio20", operator: "gt", rightType: "value", rightValue: 1.5 }], exitRules: [{ left: "close", operator: "lt", rightType: "indicator", rightIndicator: "ma10" }, { left: "rsi14", operator: "gt", rightType: "value", rightValue: 72 }] },
   { id: "ma", name: "均线动量", description: "MA5向上穿越MA20时买入，向下穿越时卖出。", summary: "MA5 / MA20 金叉与死叉", tag: "中期", color: "#4c8dff", builtin: true, horizon: "medium", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "ma5", operator: "crossesAbove", rightType: "indicator", rightIndicator: "ma20" }], exitRules: [{ left: "ma5", operator: "crossesBelow", rightType: "indicator", rightIndicator: "ma20" }] },
   { id: "lowvol", name: "低波趋势", description: "20日波动率较低且价格站上MA20时买入，趋势转弱或波动放大时离场。", summary: "低波动率 + 站上 MA20", tag: "中期", color: "#37d6aa", builtin: true, horizon: "medium", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "volatility20", operator: "lt", rightType: "value", rightValue: 1.8 }, { left: "close", operator: "gt", rightType: "indicator", rightIndicator: "ma20" }], exitRules: [{ left: "close", operator: "lt", rightType: "indicator", rightIndicator: "ma20" }, { left: "volatility20", operator: "gt", rightType: "value", rightValue: 3 }] },
+  { id: "medium-ma10-30", name: "波段均线", description: "MA10上穿MA30后参与中期波段，反向穿越时离场。", summary: "MA10 / MA30 波段", tag: "中期", color: "#62b4ff", builtin: true, horizon: "medium", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "ma10", operator: "crossesAbove", rightType: "indicator", rightIndicator: "ma30" }], exitRules: [{ left: "ma10", operator: "crossesBelow", rightType: "indicator", rightIndicator: "ma30" }] },
+  { id: "medium-rsi-trend", name: "RSI 趋势修复", description: "RSI恢复到强弱分界线上方且价格站稳MA20时入场，动能和趋势任一转弱时退出。", summary: "RSI 修复 + MA20", tag: "中期", color: "#53dfc1", builtin: true, horizon: "medium", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "rsi14", operator: "gt", rightType: "value", rightValue: 52 }, { left: "close", operator: "gt", rightType: "indicator", rightIndicator: "ma20" }], exitRules: [{ left: "rsi14", operator: "lt", rightType: "value", rightValue: 45 }, { left: "close", operator: "lt", rightType: "indicator", rightIndicator: "ma20" }] },
   { id: "long-ma", name: "长线均线趋势", description: "MA10向上穿越MA30后跟随长期趋势，反向穿越时退出。", summary: "MA10 / MA30 长趋势", tag: "长线", color: "#f3c84b", builtin: true, horizon: "long", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "ma10", operator: "crossesAbove", rightType: "indicator", rightIndicator: "ma30" }], exitRules: [{ left: "ma10", operator: "crossesBelow", rightType: "indicator", rightIndicator: "ma30" }] },
   { id: "long-defensive", name: "长线稳健持有", description: "价格在MA30上方且波动温和时持有，跌破长期均线或波动明显放大时离场。", summary: "MA30 + 长期低波动", tag: "长线", color: "#67c8ff", builtin: true, horizon: "long", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "close", operator: "gt", rightType: "indicator", rightIndicator: "ma30" }, { left: "volatility20", operator: "lt", rightType: "value", rightValue: 2 }], exitRules: [{ left: "close", operator: "lt", rightType: "indicator", rightIndicator: "ma30" }, { left: "volatility20", operator: "gt", rightType: "value", rightValue: 3.2 }] },
+  { id: "long-ma20-60", name: "长期多头排列", description: "MA20上穿MA60后进入长期多头阶段，均线反转时退出。", summary: "MA20 / MA60 长周期", tag: "长线", color: "#f0b85a", builtin: true, horizon: "long", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "ma20", operator: "crossesAbove", rightType: "indicator", rightIndicator: "ma60" }], exitRules: [{ left: "ma20", operator: "crossesBelow", rightType: "indicator", rightIndicator: "ma60" }] },
+  { id: "long-confirmed", name: "长期趋势确认", description: "价格、MA20同时位于MA60上方时持有，价格跌破MA30时保护利润。", summary: "价格 + MA20 站上 MA60", tag: "长线", color: "#d9a7ff", builtin: true, horizon: "long", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "close", operator: "gt", rightType: "indicator", rightIndicator: "ma60" }, { left: "ma20", operator: "gt", rightType: "indicator", rightIndicator: "ma60" }], exitRules: [{ left: "close", operator: "lt", rightType: "indicator", rightIndicator: "ma30" }] },
 ];
 
 const dateFormatter = new Intl.DateTimeFormat("zh-CN", { timeZone: APP_TIME_ZONE, month: "2-digit", day: "2-digit" });
@@ -505,6 +511,7 @@ export default function Home() {
   const [watchlist, setWatchlist] = useState<WatchItem[]>(initialWatchlist);
   const [selectedStock, setSelectedStock] = useState("601939");
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy>(builtinStrategies[0]);
+  const [strategyTab, setStrategyTab] = useState<Strategy["horizon"]>("short");
   const [customStrategies, setCustomStrategies] = useState<Strategy[]>([]);
   const [studioMode, setStudioMode] = useState<StudioMode>(null);
   const [showAutomation, setShowAutomation] = useState(false);
@@ -538,12 +545,13 @@ export default function Home() {
   const [runCount, setRunCount] = useState(12);
   const [toast, setToast] = useState("");
   const allStrategies = useMemo(() => [...builtinStrategies, ...customStrategies], [customStrategies]);
-  const strategyGroups = useMemo(() => [
+  const strategyGroups = useMemo<Array<{ id: Strategy["horizon"]; label: string; note: string; items: Strategy[] }>>(() => [
     { id: "short", label: "短线策略", note: "约 1—20 个交易日", items: allStrategies.filter((strategy) => strategy.horizon === "short") },
     { id: "medium", label: "中期策略", note: "约 1—6 个月", items: allStrategies.filter((strategy) => strategy.horizon === "medium") },
     { id: "long", label: "长线策略", note: "6 个月以上", items: allStrategies.filter((strategy) => strategy.horizon === "long") },
     { id: "custom", label: "我的策略", note: "自定义规则", items: allStrategies.filter((strategy) => strategy.horizon === "custom") },
-  ].filter((group) => group.items.length), [allStrategies]);
+  ], [allStrategies]);
+  const activeStrategyGroup = strategyGroups.find((group) => group.id === strategyTab) ?? strategyGroups[0];
 
   useEffect(() => {
     const stored = window.localStorage.getItem("paper-alpha-watchlist-v2");
@@ -691,9 +699,14 @@ export default function Home() {
     }
 
     const controller = new AbortController();
+    let requestTimeout: number | undefined;
     setSearchStatus("loading");
     const timer = window.setTimeout(() => {
-      fetch(`/api/tickflow/search?q=${encodeURIComponent(query)}`, { signal: controller.signal })
+      const requestController = new AbortController();
+      const stopRequest = () => requestController.abort();
+      controller.signal.addEventListener("abort", stopRequest, { once: true });
+      requestTimeout = window.setTimeout(() => requestController.abort(), 15_000);
+      fetch(`/api/tickflow/search?q=${encodeURIComponent(query)}`, { signal: requestController.signal })
         .then(async (response) => {
           if (!response.ok) throw new Error("search failed");
           return response.json() as Promise<{ results: StockSearchResult[] }>;
@@ -702,15 +715,20 @@ export default function Home() {
           setSearchResults(payload.results.filter((item) => !watchlist.some((watch) => watch.code === item.code)));
           setSearchStatus("ready");
         })
-        .catch((error) => {
-          if (error instanceof DOMException && error.name === "AbortError") return;
+        .catch(() => {
+          if (controller.signal.aborted) return;
           setSearchResults([]);
           setSearchStatus("error");
+        })
+        .finally(() => {
+          if (requestTimeout !== undefined) window.clearTimeout(requestTimeout);
+          controller.signal.removeEventListener("abort", stopRequest);
         });
     }, 320);
 
     return () => {
       window.clearTimeout(timer);
+      if (requestTimeout !== undefined) window.clearTimeout(requestTimeout);
       controller.abort();
     };
   }, [search, showSearch, watchlist]);
@@ -756,6 +774,7 @@ export default function Home() {
     const strategy: Strategy = { ...saved, summary: strategyRuleSummary(saved.entryRules, saved.entryLogic), color: "#f4c95d", builtin: false, horizon: "custom" };
     setCustomStrategies((items) => [strategy, ...items]);
     setSelectedStrategy(strategy);
+    setStrategyTab("custom");
     setStudioMode(null);
     setToast(`${strategy.name}已保存并开始回测`);
   };
@@ -766,7 +785,7 @@ export default function Home() {
     const response = await fetch("/api/strategies", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
     if (!response.ok) { setToast("策略删除失败，请重试"); return; }
     setCustomStrategies((items) => items.filter((strategy) => strategy.id !== id));
-    if (selectedStrategy.id === id) setSelectedStrategy(builtinStrategies[0]);
+    if (selectedStrategy.id === id) { setSelectedStrategy(builtinStrategies[0]); setStrategyTab("short"); }
     setToast(`${target.name}已删除`);
   };
 
@@ -777,7 +796,7 @@ export default function Home() {
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
-    setViewer(null); setCustomStrategies([]); setSelectedStrategy(builtinStrategies[0]); setShowAccount(false); setShowPaperAccounts(false); setTaskTarget(null);
+    setViewer(null); setCustomStrategies([]); setSelectedStrategy(builtinStrategies[0]); setStrategyTab("short"); setShowAccount(false); setShowPaperAccounts(false); setTaskTarget(null);
   };
 
   const editCapital = (rawValue: string) => {
@@ -841,7 +860,8 @@ export default function Home() {
         <aside className="control-column">
           <section className="strategy-panel panel">
             <div className="panel-heading compact"><div><span className="eyebrow">STRATEGY</span><h2>策略引擎 <small>{allStrategies.length}</small></h2></div><div className="strategy-tools"><button onClick={() => setStudioMode("docs")}>文档</button><button className="ai-tool" onClick={() => setStudioMode("ai")}>✦ AI</button><button className="new-tool" onClick={() => setStudioMode("manual")} aria-label="新建策略">＋</button></div></div>
-            <div className="strategy-list">{strategyGroups.map((group) => <section className="strategy-group" key={group.id}><header><b>{group.label}</b><span>{group.note}</span></header>{group.items.map((strategy) => <button key={strategy.id} className={`strategy-card ${selectedStrategy.id === strategy.id ? "active" : ""}`} onClick={() => setSelectedStrategy(strategy)} style={{ "--strategy-color": strategy.color } as CSSProperties}><span className="strategy-radio"><i /></span><span><b>{strategy.name}{!strategy.builtin && <sup>我的</sup>}</b><small>{strategy.summary}</small></span><em>{strategy.tag}</em></button>)}</section>)}</div>
+            <div className="strategy-tabs" role="tablist" aria-label="策略周期分类">{strategyGroups.map((group) => <button key={group.id} role="tab" aria-selected={strategyTab === group.id} className={strategyTab === group.id ? "active" : ""} onClick={() => setStrategyTab(group.id)}><span>{group.label}</span><em>{group.items.length}</em></button>)}</div>
+            <div className="strategy-list" role="tabpanel" aria-label={activeStrategyGroup.label}><section className="strategy-group"><header><b>{activeStrategyGroup.label}</b><span>{activeStrategyGroup.note}</span></header>{activeStrategyGroup.items.map((strategy) => <button key={strategy.id} className={`strategy-card ${selectedStrategy.id === strategy.id ? "active" : ""}`} onClick={() => setSelectedStrategy(strategy)} style={{ "--strategy-color": strategy.color } as CSSProperties}><span className="strategy-radio"><i /></span><span><b>{strategy.name}{!strategy.builtin && <sup>我的</sup>}</b><small>{strategy.summary}</small></span><em>{strategy.tag}</em></button>)}{!activeStrategyGroup.items.length && <div className="strategy-empty"><b>还没有自定义策略</b><span>点击右上角 ＋ 手动创建，或使用 AI 生成。</span></div>}</section></div>
             <div className="capital-config"><div className="section-label"><b>临时回测资金</b><span>不会保存为模拟盘</span></div><label htmlFor="initial-capital">回测本金</label><div className="capital-input"><i>¥</i><input id="initial-capital" type="text" value={capitalInput} onChange={(event) => editCapital(event.target.value)} onBlur={commitCapital} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} aria-describedby="capital-hint" /></div><small id="capital-hint" className="capital-hint">可输入 20000、2w 或 2万，按回车应用</small><div className="capital-presets">{[20_000, 100_000, 500_000, 1_000_000].map((amount) => <button key={amount} className={initialCapital === amount ? "active" : ""} onClick={() => { setInitialCapital(amount); setCapitalInput(String(amount)); }}>{amount / 10_000}万</button>)}</div></div>
             <div className="parameters"><div className="section-label"><b>执行参数</b><button onClick={() => { setPosition(30); setStopLoss(8); setTakeProfit(22); }}>恢复默认</button></div><label><span>单票仓位 <b>{position}%</b></span><input type="range" min="10" max="100" step="5" value={position} onChange={(event) => setPosition(Number(event.target.value))} /></label><div className="parameter-pair"><label><span>止损线</span><div><input type="number" min="1" max="20" value={stopLoss} onChange={(event) => setStopLoss(Number(event.target.value))} /><i>%</i></div></label><label><span>止盈线</span><div><input type="number" min="5" max="50" value={takeProfit} onChange={(event) => setTakeProfit(Number(event.target.value))} /><i>%</i></div></label></div><button className={`toggle-row ${autoRebalance ? "on" : ""}`} onClick={() => setAutoRebalance((value) => !value)} aria-pressed={autoRebalance}><span><b>收盘后自动调仓</b><small>新日K到达后检查信号</small></span><i><em /></i></button></div>
             <div className="execution-flow"><div className="section-label"><b>数据与执行流程</b><span>{dataStatus === "ready" ? "4 / 4 就绪" : "同步中"}</span></div><ol><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "1"}</i><span><b>读取 TickFlow 日K</b><small>{allBars.length || "—"} 根 · 前复权 · 真实历史数据</small></span></li><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "2"}</i><span><b>计算策略信号</b><small>{selectedStrategy.name} · 仅使用OHLCV</small></span></li><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "3"}</i><span><b>风控检查</b><small>仓位 / 止损 / 止盈</small></span></li><li className="ready"><i>4</i><span><b>虚拟撮合</b><small>佣金 0.025% · 滑点 0.1%</small></span></li></ol></div>

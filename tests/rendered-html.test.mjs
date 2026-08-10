@@ -170,7 +170,7 @@ test("keeps every product surface reachable and usable on mobile", async () => {
   assert.match(styles, /\.managed-user-list article/);
 });
 
-test("loads listing-to-present history and exposes interactive K-line strategy horizons", async () => {
+test("loads listing-to-present history and exposes interactive K-line strategy tabs", async () => {
   const [page, tickflowRoute, strategyModel, strategyEngine, styles] = await Promise.all([
     read("app/page.tsx"),
     read("app/api/tickflow/route.ts"),
@@ -188,10 +188,36 @@ test("loads listing-to-present history and exposes interactive K-line strategy h
   assert.match(page, /短线策略/);
   assert.match(page, /中期策略/);
   assert.match(page, /长线策略/);
+  assert.match(page, /role="tablist"/);
+  assert.match(page, /MA5 回踩反转/);
+  assert.match(page, /RSI 趋势修复/);
+  assert.match(page, /长期多头排列/);
+  assert.ok((page.match(/builtin: true/g) ?? []).length >= 12);
   assert.match(strategyModel, /ma30/);
+  assert.match(strategyModel, /ma60/);
   assert.match(strategyEngine, /movingAverage\(bars, index, 30\)/);
+  assert.match(strategyEngine, /movingAverage\(bars, index, 60\)/);
+  assert.match(strategyEngine, /indicatorWarmup/);
   assert.match(styles, /\.chart-navigator/);
   assert.match(styles, /\.strategy-group/);
+  assert.match(styles, /\.strategy-tabs/);
+});
+
+test("serves stock-name search from a generated catalog with bounded upstream waits", async () => {
+  const [page, searchRoute, catalogSource, refreshScript] = await Promise.all([
+    read("app/page.tsx"),
+    read("app/api/tickflow/search/route.ts"),
+    read("app/stock-catalog.generated.json"),
+    read("scripts/refresh-stock-catalog.mjs"),
+  ]);
+  const catalog = JSON.parse(catalogSource);
+  assert.ok(catalog.length > 5_000);
+  assert.ok(catalog.some((item) => item.name === "中国移动" && item.symbol === "600941.SH"));
+  assert.match(searchRoute, /stock-catalog\.generated\.json/);
+  assert.match(searchRoute, /controller\.abort\(\), 6_000/);
+  assert.doesNotMatch(searchRoute, /loadCatalog/);
+  assert.match(page, /requestController\.abort\(\), 15_000/);
+  assert.match(refreshScript, /exchanges = \["SH", "SZ", "BJ"\]/);
 });
 
 test("pins scheduling, notifications, and displayed records to Asia Shanghai", async () => {

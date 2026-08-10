@@ -1,47 +1,29 @@
+import generatedCatalog from "../../../stock-catalog.generated.json";
+
 const TICKFLOW_FREE_API = "https://free-api.tickflow.org";
-const EXCHANGES = ["SH", "SZ", "BJ"] as const;
-const CATALOG_TTL = 6 * 60 * 60 * 1000;
 
 type Instrument = {
   symbol: string;
   code: string;
   name: string;
   exchange: string;
-  region: string;
-  type: string;
 };
 
-let catalogCache: { expiresAt: number; items: Instrument[] } | null = null;
-let catalogRequest: Promise<Instrument[]> | null = null;
+const catalog = generatedCatalog as Instrument[];
 
 async function fetchJson(url: string) {
-  const response = await fetch(url, {
-    headers: { Accept: "application/json", "User-Agent": "paper-alpha/1.0" },
-  });
-  if (!response.ok) throw new Error(`TickFlow returned ${response.status}`);
-  return response.json() as Promise<{ data?: Instrument[] }>;
-}
-
-async function loadCatalog() {
-  if (catalogCache && catalogCache.expiresAt > Date.now()) return catalogCache.items;
-  if (catalogRequest) return catalogRequest;
-
-  catalogRequest = Promise.all(
-    EXCHANGES.map(async (exchange) => {
-      const payload = await fetchJson(`${TICKFLOW_FREE_API}/v1/exchanges/${exchange}/instruments?type=stock`);
-      return payload.data ?? [];
-    }),
-  ).then((groups) => {
-    const items = groups.flat().filter((item) => item.region === "CN" && item.type === "stock");
-    catalogCache = { expiresAt: Date.now() + CATALOG_TTL, items };
-    catalogRequest = null;
-    return items;
-  }).catch((error) => {
-    catalogRequest = null;
-    throw error;
-  });
-
-  return catalogRequest;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6_000);
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: "application/json", "User-Agent": "paper-alpha/1.0" },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`TickFlow returned ${response.status}`);
+    return response.json() as Promise<{ data?: Instrument[] }>;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function score(item: Instrument, query: string) {
@@ -62,7 +44,6 @@ export async function GET(request: Request) {
       matches = payload.data ?? [];
     } else {
       const normalized = query.toLowerCase();
-      const catalog = await loadCatalog();
       matches = catalog
         .filter((item) => item.code.includes(normalized) || item.name.toLowerCase().includes(normalized))
         .sort((a, b) => score(a, normalized) - score(b, normalized) || a.code.localeCompare(b.code))

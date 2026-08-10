@@ -49,6 +49,7 @@ function indicatorValue(key: IndicatorKey, bars: Kline[], index: number) {
   if (key === "ma10") return movingAverage(bars, index, 10) ?? bar.close;
   if (key === "ma20") return movingAverage(bars, index, 20) ?? bar.close;
   if (key === "ma30") return movingAverage(bars, index, 30) ?? bar.close;
+  if (key === "ma60") return movingAverage(bars, index, 60) ?? bar.close;
   if (key === "rsi14") return calculateRsi(bars, index) ?? 50;
   if (key === "highest20") return Math.max(...bars.slice(Math.max(0, index - 20), index).map((item) => item.high));
   if (key === "volumeRatio20") {
@@ -73,7 +74,24 @@ function ruleMatches(rule: StrategyRule, bars: Kline[], index: number) {
 }
 
 export function signalFor(strategy: SignalStrategy, bars: Kline[], index: number, side: "buy" | "sell") {
-  if (index < 30) return { active: false, reason: "等待足够日K" };
+  const indicatorWarmup: Record<IndicatorKey, number> = {
+    close: 1,
+    open: 1,
+    ma5: 5,
+    ma10: 10,
+    ma20: 20,
+    ma30: 30,
+    ma60: 60,
+    rsi14: 14,
+    volatility20: 20,
+    volumeRatio20: 20,
+    highest20: 20,
+  };
+  const warmup = [...strategy.entryRules, ...strategy.exitRules].reduce((required, rule) => {
+    const rightWarmup = rule.rightType === "indicator" ? indicatorWarmup[rule.rightIndicator ?? "close"] : 1;
+    return Math.max(required, indicatorWarmup[rule.left], rightWarmup);
+  }, 1);
+  if (index < warmup) return { active: false, reason: "等待足够日K" };
   const rules = side === "buy" ? strategy.entryRules : strategy.exitRules;
   const logic = side === "buy" ? strategy.entryLogic : strategy.exitLogic;
   const results = rules.map((rule) => ruleMatches(rule, bars, index));
