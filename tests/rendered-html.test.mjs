@@ -220,6 +220,28 @@ test("serves stock-name search from a generated catalog with bounded upstream wa
   assert.match(refreshScript, /exchanges = \["SH", "SZ", "BJ"\]/);
 });
 
+test("polls account-scoped realtime quotes without exposing the TickFlow key", async () => {
+  const [page, quoteRoute, client, tasks] = await Promise.all([
+    read("app/page.tsx"),
+    read("app/api/tickflow/quotes/route.ts"),
+    read("app/tickflow-client.ts"),
+    read("app/task-center.tsx"),
+  ]);
+  assert.match(page, /\/api\/tickflow\/quotes\?symbols=/);
+  assert.match(page, /setInterval\(\(\) => void loadRealtimeQuotes\(\), 10_000\)/);
+  assert.match(page, /document\.visibilityState !== "visible"/);
+  assert.match(page, /visibilitychange/);
+  assert.match(page, /cache: "no-store"/);
+  assert.match(page, /实时行情 · 每10秒更新/);
+  assert.match(quoteRoute, /getAppUser\(request\)/);
+  assert.match(quoteRoute, /decryptSecret\(settings\.encrypted\)/);
+  assert.match(quoteRoute, /private, no-store/);
+  assert.doesNotMatch(quoteRoute, /tickflowApiKeyEncrypted[^\n]*Response\.json/);
+  assert.match(client, /symbols\.join\(","\)/);
+  assert.match(client, /controller\.abort\(\), 8_000/);
+  assert.match(tasks, /onTaskChanged\(\); onToast\("TickFlow 实时行情已连接"\)/);
+});
+
 test("pins scheduling, notifications, and displayed records to Asia Shanghai", async () => {
   const [timezone, schema, automationRoute, runner, notificationTest, service, tasks, notifications, paperAccounts, users] = await Promise.all([
     read("app/timezone.ts"),

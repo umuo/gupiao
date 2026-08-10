@@ -36,6 +36,13 @@ type StockSearchResult = {
   exchange: string;
 };
 
+type RealtimeQuote = {
+  symbol: string;
+  timestamp: number;
+  lastPrice: number;
+  previousClose: number;
+};
+
 function parseCapitalInput(rawValue: string) {
   const normalized = rawValue.trim().replace(/[\s,，]/g, "").toLowerCase();
   const match = normalized.match(/^(\d+(?:\.\d+)?)(w|万)?$/);
@@ -96,6 +103,7 @@ const builtinStrategies: Strategy[] = [
 
 const dateFormatter = new Intl.DateTimeFormat("zh-CN", { timeZone: APP_TIME_ZONE, month: "2-digit", day: "2-digit" });
 const fullDateFormatter = new Intl.DateTimeFormat("zh-CN", { timeZone: APP_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" });
+const timeFormatter = new Intl.DateTimeFormat("zh-CN", { timeZone: APP_TIME_ZONE, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
 function toSymbol(code: string) {
   if (code.startsWith("6")) return `${code}.SH`;
@@ -539,11 +547,15 @@ export default function Home() {
   const [historySeries, setHistorySeries] = useState<Record<string, Kline[]>>({});
   const [dataStatus, setDataStatus] = useState<"loading" | "ready" | "error">("loading");
   const [historyStatus, setHistoryStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [realtimeStatus, setRealtimeStatus] = useState<"idle" | "loading" | "live" | "unavailable" | "error">("idle");
+  const [lastRealtimeAt, setLastRealtimeAt] = useState<number | null>(null);
+  const [realtimeConfigTick, setRealtimeConfigTick] = useState(0);
   const [refreshTick, setRefreshTick] = useState(0);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(100);
   const [runCount, setRunCount] = useState(12);
   const [toast, setToast] = useState("");
+  const realtimeQuotesRef = useRef<Record<string, RealtimeQuote>>({});
   const allStrategies = useMemo(() => [...builtinStrategies, ...customStrategies], [customStrategies]);
   const strategyGroups = useMemo<Array<{ id: Strategy["horizon"]; label: string; note: string; items: Strategy[] }>>(() => [
     { id: "short", label: "短线策略", note: "约 1—20 个交易日", items: allStrategies.filter((strategy) => strategy.horizon === "short") },
@@ -620,10 +632,11 @@ export default function Home() {
           const latest = bars.at(-1)!;
           const previous = bars.at(-2) ?? latest;
           const ma20 = average(bars.slice(-20).map((bar) => bar.close));
+          const realtime = realtimeQuotesRef.current[toSymbol(item.code)];
           return {
             ...item,
-            price: latest.close,
-            change: (latest.close / previous.close - 1) * 100,
+            price: realtime?.lastPrice ?? latest.close,
+            change: realtime ? (realtime.lastPrice / realtime.previousClose - 1) * 100 : (latest.close / previous.close - 1) * 100,
             signal: latest.close > ma20 ? "趋势向上" : "观察",
           };
         }));
@@ -636,6 +649,81 @@ export default function Home() {
       });
     return () => controller.abort();
   }, [watchlistCodes, refreshTick]);
+
+  useEffect(() => {
+    if (!watchlistCodes || !viewer) {
+      // Realtime quotes are account-scoped and only start after login.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRealtimeStatus("idle");
+      return;
+    }
+
+    let active = true;
+    let requestController: AbortController | null = null;
+    let requestTimeout: number | null = null;
+    let pollTimer: number | null = null;
+    const symbols = watchlistCodes.split(",").map(toSymbol).join(",");
+
+    const stopPolling = () => {
+      if (pollTimer !== null) window.clearInterval(pollTimer);
+      pollTimer = null;
+    };
+
+    const loadRealtimeQuotes = async () => {
+      if (!active || document.visibilityState !== "visible" || requestController) return;
+      requestController = new AbortController();
+      requestTimeout = window.setTimeout(() => requestController?.abort(), 8_000);
+      try {
+        const response = await fetch(`/api/tickflow/quotes?symbols=${encodeURIComponent(symbols)}`, {
+          cache: "no-store",
+          signal: requestController.signal,
+        });
+        const payload = await response.json() as { configured?: boolean; quotes?: Record<string, RealtimeQuote> };
+        if (response.status === 401 || response.status === 409 || payload.configured === false) {
+          setRealtimeStatus("unavailable");
+          stopPolling();
+          return;
+        }
+        if (!response.ok || !payload.quotes || !Object.keys(payload.quotes).length) throw new Error("Realtime quote request failed");
+        realtimeQuotesRef.current = { ...realtimeQuotesRef.current, ...payload.quotes };
+        setWatchlist((items) => items.map((item) => {
+          const quote = payload.quotes?.[toSymbol(item.code)];
+          if (!quote) return item;
+          return {
+            ...item,
+            price: quote.lastPrice,
+            change: (quote.lastPrice / quote.previousClose - 1) * 100,
+          };
+        }));
+        const newestTimestamp = Math.max(...Object.values(payload.quotes).map((quote) => quote.timestamp));
+        setLastRealtimeAt(Number.isFinite(newestTimestamp) ? newestTimestamp : Date.now());
+        setRealtimeStatus("live");
+      } catch {
+        if (!active) return;
+        setRealtimeStatus("error");
+      } finally {
+        if (requestTimeout !== null) window.clearTimeout(requestTimeout);
+        requestTimeout = null;
+        requestController = null;
+      }
+    };
+
+    // Start with a snapshot, then poll only while this tab is visible.
+    setRealtimeStatus("loading");
+    void loadRealtimeQuotes();
+    pollTimer = window.setInterval(() => void loadRealtimeQuotes(), 10_000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") void loadRealtimeQuotes();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      active = false;
+      stopPolling();
+      if (requestTimeout !== null) window.clearTimeout(requestTimeout);
+      requestController?.abort();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [watchlistCodes, viewer, realtimeConfigTick]);
 
   const selectedSymbol = toSymbol(selectedStock || "601939");
   useEffect(() => {
@@ -747,6 +835,8 @@ export default function Home() {
   const backtest = useMemo(() => runBacktest(periodBars, selectedStrategy, initialCapital, position, stopLoss, takeProfit), [periodBars, selectedStrategy, initialCapital, position, stopLoss, takeProfit]);
   const selectedItem = watchlist.find((item) => item.code === selectedStock) ?? watchlist[0];
   const latestBar = allBars.at(-1);
+  const realtimeLabel = realtimeStatus === "live" ? "实时行情 · 10秒轮询" : realtimeStatus === "loading" ? "实时行情连接中" : realtimeStatus === "error" ? "实时行情重试中" : "历史日K行情";
+  const realtimeDetail = realtimeStatus === "live" && lastRealtimeAt ? timeFormatter.format(lastRealtimeAt) : realtimeStatus === "loading" ? "连接中" : realtimeStatus === "error" ? "自动重试" : "需配置 Key";
   const recentTrades = backtest.trades.slice(-3).reverse();
   const viewerInitials = viewer ? viewer.displayName.slice(0, 2).toUpperCase() : "…";
 
@@ -822,12 +912,12 @@ export default function Home() {
       <header className="topbar">
         <div className="brand"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span><div><b>PAPER ALPHA</b><small>A股策略模拟台</small></div></div>
         <div className="market-strip" aria-label="真实数据状态">
-          <span><i className={dataStatus === "error" ? "error-dot" : "live-dot"} /> TickFlow 真实历史日K</span>
+          <span><i className={realtimeStatus === "live" ? "live-dot" : realtimeStatus === "error" ? "error-dot" : "demo-dot"} /> TickFlow {realtimeLabel}</span>
           <b>{selectedItem?.name ?? "建设银行"} <em className={(selectedItem?.change ?? 0) >= 0 ? "up" : "down"}>{selectedItem?.price ? selectedItem.price.toFixed(2) : "—"}</em></b>
-          <b>数据日期 <em>{latestBar ? fullDateFormatter.format(latestBar.timestamp) : "同步中"}</em></b>
-          <b><em>前复权 · 非实时</em></b>
+          <b>行情时间 <em>{realtimeStatus === "live" && lastRealtimeAt ? timeFormatter.format(lastRealtimeAt) : latestBar ? fullDateFormatter.format(latestBar.timestamp) : "同步中"}</em></b>
+          <b><em>{realtimeStatus === "live" ? "实时快照 · 前台轮询" : "前复权 · 非实时"}</em></b>
         </div>
-        <div className="top-actions"><span className="trade-day">免费日K · 实时需 TickFlow Key</span><button className="icon-button paper-button" aria-label="我的模拟盘" onClick={() => setShowPaperAccounts(true)}>◎<span>模拟盘</span></button><button className="icon-button task-button" aria-label="定时任务" onClick={() => { setTaskTarget(null); setShowAutomation(true); }}>◴<span>任务</span></button><button className="icon-button notify-button" aria-label="通知配置" onClick={() => setShowNotifications(true)}>⌁<span>通知</span></button><button className="icon-button" aria-label="AI接口配置" onClick={() => setStudioMode("settings")}>✦<span>AI</span></button><div className="account-wrap"><button className="account-button" onClick={() => setShowAccount((value) => !value)} aria-expanded={showAccount}><i>{viewerInitials}</i><span>{viewer ? viewer.displayName : authStatus === "loading" ? "确认登录中" : "未登录"}<br /><small>{viewer ? viewer.role === "superadmin" ? "超级管理员" : "个人策略账户" : "登录后保存策略"}</small></span></button>{showAccount && <div className="account-popover"><span>ACCOUNT</span>{viewer ? <><div className={`role-badge ${viewer.role}`}>{viewer.role === "superadmin" ? "★ 超级管理员" : "普通用户"}</div><b>{viewer.displayName}</b><small>{viewer.email}</small><div><em>{customStrategies.length}</em> 个自定义策略</div>{viewer.role === "superadmin" && <button onClick={() => { setShowUserManagement(true); setShowAccount(false); }}>用户管理</button>}<button onClick={() => { setShowPaperAccounts(true); setShowAccount(false); }}>我的模拟盘</button><button onClick={() => { setTaskTarget(null); setShowAutomation(true); setShowAccount(false); }}>定时任务</button><button onClick={() => { setShowNotifications(true); setShowAccount(false); }}>通知配置</button><button onClick={() => { setStudioMode("settings"); setShowAccount(false); }}>AI 接口配置</button><button onClick={handleLogout}>退出登录</button></> : <small>请使用管理员分配的账户登录</small>}</div>}</div></div>
+        <div className="top-actions"><span className="trade-day">{realtimeStatus === "live" ? "实时行情 · 每10秒更新" : "免费日K · 实时需 TickFlow Key"}</span><button className="icon-button paper-button" aria-label="我的模拟盘" onClick={() => setShowPaperAccounts(true)}>◎<span>模拟盘</span></button><button className="icon-button task-button" aria-label="定时任务" onClick={() => { setTaskTarget(null); setShowAutomation(true); }}>◴<span>任务</span></button><button className="icon-button notify-button" aria-label="通知配置" onClick={() => setShowNotifications(true)}>⌁<span>通知</span></button><button className="icon-button" aria-label="AI接口配置" onClick={() => setStudioMode("settings")}>✦<span>AI</span></button><div className="account-wrap"><button className="account-button" onClick={() => setShowAccount((value) => !value)} aria-expanded={showAccount}><i>{viewerInitials}</i><span>{viewer ? viewer.displayName : authStatus === "loading" ? "确认登录中" : "未登录"}<br /><small>{viewer ? viewer.role === "superadmin" ? "超级管理员" : "个人策略账户" : "登录后保存策略"}</small></span></button>{showAccount && <div className="account-popover"><span>ACCOUNT</span>{viewer ? <><div className={`role-badge ${viewer.role}`}>{viewer.role === "superadmin" ? "★ 超级管理员" : "普通用户"}</div><b>{viewer.displayName}</b><small>{viewer.email}</small><div><em>{customStrategies.length}</em> 个自定义策略</div>{viewer.role === "superadmin" && <button onClick={() => { setShowUserManagement(true); setShowAccount(false); }}>用户管理</button>}<button onClick={() => { setShowPaperAccounts(true); setShowAccount(false); }}>我的模拟盘</button><button onClick={() => { setTaskTarget(null); setShowAutomation(true); setShowAccount(false); }}>定时任务</button><button onClick={() => { setShowNotifications(true); setShowAccount(false); }}>通知配置</button><button onClick={() => { setStudioMode("settings"); setShowAccount(false); }}>AI 接口配置</button><button onClick={handleLogout}>退出登录</button></> : <small>请使用管理员分配的账户登录</small>}</div>}</div></div>
       </header>
 
       <div className="workspace">
@@ -835,7 +925,7 @@ export default function Home() {
           <div className="panel-heading"><div><span className="eyebrow">WATCHLIST</span><h2>自选股 <small>{watchlist.length}</small></h2></div><button className="add-button" onClick={() => setShowSearch((value) => !value)} aria-expanded={showSearch}>＋</button></div>
           {showSearch && <div className="stock-search"><label htmlFor="stock-search">联网搜索 A 股</label><div className="search-input-wrap"><input id="stock-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="输入股票代码或名称" /><i className={searchStatus === "loading" ? "search-spinner" : "search-cloud"}>{searchStatus === "loading" ? "" : "⌁"}</i></div><div className="search-results">{searchResults.map((stock) => <button key={stock.symbol} onClick={() => addStock(stock)}><span>{stock.name}<small>{stock.symbol}</small></span><b>＋</b></button>)}{searchStatus === "idle" && <p>输入关键词后通过 TickFlow 联网查询</p>}{searchStatus === "loading" && <p>正在联网搜索…</p>}{searchStatus === "ready" && searchResults.length === 0 && <p>没有找到匹配的 A 股</p>}{searchStatus === "error" && <p className="search-error">联网搜索暂时不可用，请重试</p>}</div></div>}
           <div className="watch-list">{watchlist.map((stock) => <button key={stock.code} className={`watch-row ${selectedStock === stock.code ? "active" : ""}`} onClick={() => setSelectedStock(stock.code)}><span className="stock-identity"><b>{stock.name}</b><small>{toSymbol(stock.code)}</small></span><span className="stock-quote"><b>{stock.price ? stock.price.toFixed(2) : "—"}</b><small className={stock.change >= 0 ? "up" : "down"}>{stock.price ? `${stock.change >= 0 ? "+" : ""}${stock.change.toFixed(2)}%` : "读取中"}</small></span><span className={`signal signal-${stock.signal}`}>{stock.signal}</span><span className="remove-stock" role="button" tabIndex={0} aria-label={`移除${stock.name}`} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); removeStock(stock.code); } }} onClick={(event) => { event.stopPropagation(); removeStock(stock.code); }}>×</span></button>)}</div>
-          <div className="watch-footer"><div><span>数据源</span><b>TickFlow</b></div><div><span>上市以来</span><b>{historyStatus === "loading" ? "读取中" : `${allBars.length || "—"} 根`}</b></div><button onClick={() => setRefreshTick((value) => value + 1)}>↻ 同步完整历史</button></div>
+          <div className="watch-footer"><div><span>自选股行情</span><b>{realtimeStatus === "live" ? "TickFlow 实时" : "TickFlow 日K"}</b></div><div><span>轮询状态</span><b className={realtimeStatus === "live" ? "realtime-ready" : ""}>{realtimeDetail}</b></div><button onClick={() => setRefreshTick((value) => value + 1)}>↻ 同步完整历史 · {historyStatus === "loading" ? "读取中" : `${allBars.length || "—"} 根`}</button></div>
         </aside>
 
         <section className="main-column">
@@ -881,7 +971,7 @@ export default function Home() {
       </nav>
       <StrategyStudio mode={studioMode} strategies={allStrategies} aiSettings={aiSettings} onAiSettingsChange={setAiSettings} onCreated={handleStrategyCreated} onDeleted={handleStrategyDeleted} onClose={() => setStudioMode(null)} />
       <PaperAccountCenter open={showPaperAccounts} watchlist={watchlist} strategies={allStrategies} onClose={() => setShowPaperAccounts(false)} onToast={setToast} onConfigureTask={(target) => { setShowPaperAccounts(false); setTaskTarget(target); setShowAutomation(true); }} />
-      <TaskCenter open={showAutomation} watchlist={watchlist} strategies={allStrategies} defaultStopLoss={stopLoss} defaultTakeProfit={takeProfit} targetAccount={taskTarget} onClose={() => { setShowAutomation(false); setTaskTarget(null); }} onToast={setToast} onOpenNotifications={() => { setShowAutomation(false); setShowNotifications(true); }} onTaskChanged={() => undefined} />
+      <TaskCenter open={showAutomation} watchlist={watchlist} strategies={allStrategies} defaultStopLoss={stopLoss} defaultTakeProfit={takeProfit} targetAccount={taskTarget} onClose={() => { setShowAutomation(false); setTaskTarget(null); }} onToast={setToast} onOpenNotifications={() => { setShowAutomation(false); setShowNotifications(true); }} onTaskChanged={() => setRealtimeConfigTick((value) => value + 1)} />
       <NotificationCenter open={showNotifications} onClose={() => { setShowNotifications(false); if (taskTarget) setShowAutomation(true); }} onToast={setToast} />
       <UserManagement open={showUserManagement && viewer?.role === "superadmin"} onClose={() => setShowUserManagement(false)} onToast={setToast} />
       {authStatus === "ready" && !viewer && <AuthGate adminReady={adminReady} onAuthenticated={handleAuthenticated} />}

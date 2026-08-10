@@ -489,6 +489,7 @@ h2 small {
 
 .watch-footer span { color: var(--muted); display: block; font-size: 9px; }
 .watch-footer b { display: block; font-family: var(--font-geist-mono), monospace; font-size: 14px; margin-top: 3px; }
+.watch-footer b.realtime-ready { color: var(--green); }
 
 .watch-footer button {
   background: transparent;

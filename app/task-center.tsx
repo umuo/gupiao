@@ -210,14 +210,14 @@ export function TaskCenter({ open, watchlist, strategies, defaultStopLoss, defau
       const response = await fetch("/api/settings/tickflow", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey }) });
       const payload = await response.json() as { hint?: string; error?: string };
       if (!response.ok) throw new Error(payload.error || "保存失败");
-      setTickflow({ configured: true, hint: payload.hint ?? null }); setApiKey(""); onToast("TickFlow 实时行情已连接");
+      setTickflow({ configured: true, hint: payload.hint ?? null }); setApiKey(""); onTaskChanged(); onToast("TickFlow 实时行情已连接");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "保存失败"); }
     finally { setSaving(false); }
   };
 
   const removeTickflow = async () => {
     const response = await fetch("/api/settings/tickflow", { method: "DELETE" });
-    if (response.ok) { setTickflow({ configured: false, hint: null }); setApiKey(""); onToast("TickFlow Key 已移除"); }
+    if (response.ok) { setTickflow({ configured: false, hint: null }); setApiKey(""); onTaskChanged(); onToast("TickFlow Key 已移除"); }
   };
 
   return <div className="studio-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
