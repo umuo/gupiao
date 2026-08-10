@@ -79,15 +79,15 @@ function AccountForm({ account, watchlist, strategies, onCancel, onSaved }: {
 }) {
   const locked = Boolean(account?.tradeCount || account?.position);
   const currentCode = account ? codeFor(account.symbol) : (watchlist[0]?.code ?? "601939");
-  const currentStrategy = account ? strategies.find((item) => item.id === account.strategyId) : strategies[0];
   const fallbackStrategy: SavedStrategy | null = account ? { id: account.strategyId, name: account.strategyName, description: "模拟盘保存的策略快照", tag: "模拟盘", version: account.strategyVersion, contentHash: account.strategySnapshotHash, ...account.strategyDefinition } : null;
-  const availableStrategies = fallbackStrategy && !strategies.some((item) => item.id === fallbackStrategy.id) ? [fallbackStrategy, ...strategies] : strategies;
+  const accountStrategies = account?.strategies?.length ? account.strategies : fallbackStrategy ? [fallbackStrategy] : [];
+  const availableStrategies = [...accountStrategies, ...strategies.filter((item) => !accountStrategies.some((snapshot) => snapshot.id === item.id))];
   const availableStocks = account && !watchlist.some((item) => symbolFor(item.code) === account.symbol) ? [{ code: currentCode, name: account.stockName }, ...watchlist] : watchlist;
   const [name, setName] = useState(account?.name ?? "建设银行趋势盘");
   const [description, setDescription] = useState(account?.description ?? "用于跟踪策略的独立模拟资金与成交记录");
   const [capital, setCapital] = useState(String(account?.initialCapital ?? 100_000));
   const [stockCode, setStockCode] = useState(currentCode);
-  const [strategyId, setStrategyId] = useState(account?.strategyId ?? currentStrategy?.id ?? "");
+  const [strategyIds, setStrategyIds] = useState<string[]>(accountStrategies.length ? accountStrategies.map((item) => item.id) : strategies[0] ? [strategies[0].id] : []);
   const [positionPercent, setPositionPercent] = useState(account?.positionPercent ?? 30);
   const [stopLoss, setStopLoss] = useState(account?.stopLoss ?? 8);
   const [takeProfit, setTakeProfit] = useState(account?.takeProfit ?? 22);
@@ -95,18 +95,28 @@ function AccountForm({ account, watchlist, strategies, onCancel, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const selectedStock = availableStocks.find((item) => item.code === stockCode) ?? availableStocks[0];
-  const selectedStrategy = availableStrategies.find((item) => item.id === strategyId) ?? availableStrategies[0] ?? fallbackStrategy;
+  const selectedStrategies = strategyIds.flatMap((id) => {
+    const strategy = availableStrategies.find((item) => item.id === id);
+    return strategy ? [strategy] : [];
+  });
+
+  const toggleStrategy = (id: string) => {
+    if (locked) return;
+    setStrategyIds((current) => current.includes(id)
+      ? current.length === 1 ? current : current.filter((item) => item !== id)
+      : current.length >= 8 ? current : [...current, id]);
+  };
 
   const save = async () => {
     const initialCapital = parseCapital(capital);
     if (!initialCapital) { setError("请输入有效初始本金，可使用 2w 或 2万"); return; }
-    if (!selectedStock || !selectedStrategy || !name.trim()) { setError("请完整填写名称、股票和策略"); return; }
+    if (!selectedStock || !selectedStrategies.length || !name.trim()) { setError("请完整填写名称、股票和策略"); return; }
     setSaving(true); setError("");
     try {
       const response = await fetch("/api/paper-accounts", {
         method: account ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: account?.id, name, description, initialCapital, symbol: symbolFor(selectedStock.code), stockName: selectedStock.name, strategyId: selectedStrategy.id, strategy: selectedStrategy, positionPercent, stopLoss, takeProfit, status }),
+        body: JSON.stringify({ id: account?.id, name, description, initialCapital, symbol: symbolFor(selectedStock.code), stockName: selectedStock.name, strategyId: selectedStrategies[0].id, strategies: selectedStrategies, positionPercent, stopLoss, takeProfit, status }),
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || "保存模拟盘失败");
@@ -120,7 +130,7 @@ function AccountForm({ account, watchlist, strategies, onCancel, onSaved }: {
     <div className="paper-form-grid"><label><span>模拟盘名称</span><input value={name} maxLength={40} onChange={(event) => setName(event.target.value)} /></label><label><span>运行状态</span><select value={status} onChange={(event) => setStatus(event.target.value as "active" | "paused")}><option value="active">运行中</option><option value="paused">已暂停</option></select></label></div>
     <label><span>用途说明</span><textarea value={description} maxLength={200} onChange={(event) => setDescription(event.target.value)} /></label>
     <div className="paper-form-grid"><label><span>初始本金</span><input disabled={locked} value={capital} onChange={(event) => setCapital(event.target.value.replace(/[^0-9.,，wW万\s]/g, ""))} /><small>支持 20000、2w、2万</small></label><label><span>交易股票</span><select disabled={locked} value={stockCode} onChange={(event) => setStockCode(event.target.value)}>{availableStocks.map((stock) => <option value={stock.code} key={stock.code}>{stock.name} · {stock.code}</option>)}</select></label></div>
-    <label><span>执行策略</span><select disabled={locked} value={strategyId} onChange={(event) => setStrategyId(event.target.value)}>{availableStrategies.map((strategy) => <option value={strategy.id} key={strategy.id}>{strategy.name}</option>)}</select></label>
+    <fieldset className="paper-strategy-picker" disabled={locked}><legend>执行策略 <em>{selectedStrategies.length} / 8</em></legend><p>任一策略触发即可买入；持仓后任一策略触发即可卖出。</p><div>{availableStrategies.map((strategy) => { const selected = strategyIds.includes(strategy.id); return <button type="button" aria-pressed={selected} className={selected ? "selected" : ""} key={strategy.id} onClick={() => toggleStrategy(strategy.id)}><i>{selected ? "✓" : ""}</i><span><b>{strategy.name}</b><small>{strategy.tag}</small></span></button>; })}</div></fieldset>
     <div className="paper-risk-grid"><label><span>单次仓位 <b>{positionPercent}%</b></span><input type="range" min="1" max="100" step="1" value={positionPercent} onChange={(event) => setPositionPercent(Number(event.target.value))} /></label><label><span>止损 (%)</span><input type="number" min="0.1" max="100" step="0.1" value={stopLoss} onChange={(event) => setStopLoss(Number(event.target.value))} /></label><label><span>止盈 (%)</span><input type="number" min="0.1" max="500" step="0.1" value={takeProfit} onChange={(event) => setTakeProfit(Number(event.target.value))} /></label></div>
     {error && <p className="studio-error">{error}</p>}
     <footer><button onClick={onCancel}>取消</button><button className="primary-studio-button" disabled={saving} onClick={save}>{saving ? "保存中…" : account ? "保存修改" : "创建模拟盘"}</button></footer>
@@ -204,22 +214,22 @@ export function PaperAccountCenter({ open, watchlist, strategies, onClose, onToa
     name: account.name,
     symbol: account.symbol,
     stockName: account.stockName,
-    strategy: { id: account.strategyId, name: account.strategyName, description: "模拟盘保存的策略快照", tag: "模拟盘", version: account.strategyVersion, contentHash: account.strategySnapshotHash, ...account.strategyDefinition },
+    strategies: account.strategies?.length ? account.strategies : [{ id: account.strategyId, name: account.strategyName, description: "模拟盘保存的策略快照", tag: "模拟盘", version: account.strategyVersion, contentHash: account.strategySnapshotHash, ...account.strategyDefinition }],
     stopLoss: account.stopLoss,
     takeProfit: account.takeProfit,
     automation: account.automation,
   });
 
   return <div className="studio-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="strategy-studio paper-account-studio" role="dialog" aria-modal="true" aria-labelledby="paper-title">
-    <header className="studio-header"><div><span>PAPER PORTFOLIOS</span><h2 id="paper-title">我的模拟盘</h2><p>每个模拟盘独立记录资金、持仓、成交和每日收益；定时任务按需配置。</p></div><button onClick={onClose} aria-label="关闭">×</button></header>
+    <header className="studio-header"><div><span>PAPER PORTFOLIOS</span><h2 id="paper-title">我的模拟盘</h2><p>每个模拟盘可同时运行多个策略，并独立记录资金、持仓、成交和每日收益。</p></div><button onClick={onClose} aria-label="关闭">×</button></header>
     <div className="paper-toolbar"><div><span>本页资产<b>{money(totals.equity)}</b></span><span>本页盈亏<b className={totals.pnl >= 0 ? "up" : "down"}>{totals.pnl >= 0 ? "+" : ""}{money(totals.pnl)}</b></span><span>运行任务<b>{totals.running} / {items.length}</b></span></div><button onClick={refreshValuations} disabled={refreshing}>{refreshing ? "更新中…" : "↻ 更新今日收益"}</button><button className="primary-studio-button" onClick={() => setFormAccount("new")}>＋ 新建模拟盘</button></div>
     {error && <p className="studio-error paper-global-error">{error}</p>}
-    <div className="paper-layout"><aside className="paper-list"><div><span>ACCOUNTS</span><b>{pagination.total} / 100</b></div>{items.map((account) => <button key={account.id} className={selected?.id === account.id ? "active" : ""} onClick={() => setSelectedId(account.id)}><i className={account.status} /><span><b>{account.name}</b><small>{account.stockName} · {account.strategyName}</small></span><em className={account.metrics.totalReturn >= 0 ? "up" : "down"}>{percent(account.metrics.totalReturn)}</em></button>)}{pagination.totalPages > 1 && <div className="paper-pagination"><button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>←</button><span>{page} / {pagination.totalPages}</span><button disabled={page >= pagination.totalPages} onClick={() => setPage((value) => Math.min(pagination.totalPages, value + 1))}>→</button></div>}{!items.length && !loading && <div className="paper-empty-list"><i>◎</i><b>还没有模拟盘</b><p>创建后即可长期记录独立收益。</p></div>}</aside>
+    <div className="paper-layout"><aside className="paper-list"><div><span>ACCOUNTS</span><b>{pagination.total} / 100</b></div>{items.map((account) => <button key={account.id} className={selected?.id === account.id ? "active" : ""} onClick={() => setSelectedId(account.id)}><i className={account.status} /><span><b>{account.name}</b><small>{account.stockName} · {account.strategies?.length || 1} 个策略</small></span><em className={account.metrics.totalReturn >= 0 ? "up" : "down"}>{percent(account.metrics.totalReturn)}</em></button>)}{pagination.totalPages > 1 && <div className="paper-pagination"><button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>←</button><span>{page} / {pagination.totalPages}</span><button disabled={page >= pagination.totalPages} onClick={() => setPage((value) => Math.min(pagination.totalPages, value + 1))}>→</button></div>}{!items.length && !loading && <div className="paper-empty-list"><i>◎</i><b>还没有模拟盘</b><p>创建后即可长期记录独立收益。</p></div>}</aside>
       <section className="paper-detail">{selected ? <>
         <header className="paper-detail-header"><div><span className={`paper-status ${selected.status}`}>{selected.status === "active" ? "● 运行中" : "Ⅱ 已暂停"}</span><h3>{selected.name}</h3><p>{selected.description || "暂无说明"}</p></div><div><button onClick={() => setFormAccount(selected)}>编辑</button><button className="danger" onClick={() => remove(selected)}>删除</button></div></header>
         <div className="paper-metrics"><article><span>当前总资产</span><b>{money(selected.metrics.equity)}</b><small>本金 {money(selected.initialCapital)}</small></article><article><span>累计收益</span><b className={selected.metrics.totalReturn >= 0 ? "up" : "down"}>{percent(selected.metrics.totalReturn)}</b><small>今日 {percent(selected.metrics.dailyReturn)}</small></article><article><span>已实现盈亏</span><b className={selected.metrics.realizedPnl >= 0 ? "up" : "down"}>{money(selected.metrics.realizedPnl, 2)}</b><small>浮动 {money(selected.metrics.unrealizedPnl, 2)}</small></article><article><span>可用资金</span><b>{money(selected.cash)}</b><small>仓位 {selected.positionPercent}%</small></article></div>
         <div className="paper-curve-card"><header><div><span>DAILY EQUITY</span><b>每日权益</b></div><small>{selected.lastValuationDate ? `最近估值 ${selected.lastValuationDate}` : "等待首次行情估值"}</small></header><div><EquityCurve account={selected} /></div></div>
-        <div className="paper-info-grid"><section><header><span>执行配置</span><b>{selected.stockName} · {selected.symbol}</b></header><dl><div><dt>策略快照</dt><dd>{selected.strategyName} · v{selected.strategyVersion} · {selected.strategySnapshotHash.slice(0, 8)}</dd></div><div><dt>单次仓位</dt><dd>{selected.positionPercent}%</dd></div><div><dt>止损 / 止盈</dt><dd>{selected.stopLoss}% / {selected.takeProfit}%</dd></div><div><dt>撮合规则</dt><dd>佣金 0.025% · 滑点 0.1%</dd></div></dl></section><section className="paper-task-card"><header><span>自动检查与通知</span><b className={selected.automation?.enabled ? "running" : ""}>{selected.automation ? selected.automation.enabled ? "运行中" : "已停用" : "未配置"}</b></header>{selected.automation ? <><p>{selected.automation.dataMode === "realtime" ? `实时行情 · 每 ${selected.automation.intervalMinutes} 分钟` : `免费日K · ${selected.automation.runTime}`} · {APP_TIME_ZONE}</p><small>最近运行：{selected.automation.lastStatus === "failed" ? `失败 · ${selected.automation.lastError || "请查看运行记录"}` : selected.automation.lastStatus === "retrying" ? "自动重试中" : selected.automation.lastStatus === "succeeded" ? "成功" : "等待首次运行"}</small><small>渠道：{selected.automation.notificationChannelNames.join("、") || "未配置"}</small><button onClick={() => onConfigureTask(targetFor(selected))}>管理定时任务 →</button></> : <><p>不配置任务也可以每天手动更新并查看收益。</p><small>配置后，策略信号会执行模拟成交并向所选渠道发送买卖通知。</small><button onClick={() => onConfigureTask(targetFor(selected))}>＋ 配置定时任务</button></>}</section></div>
+        <div className="paper-info-grid"><section><header><span>执行配置</span><b>{selected.stockName} · {selected.symbol}</b></header><dl><div><dt>策略快照</dt><dd className="paper-strategy-summary">{(selected.strategies?.length ? selected.strategies : [{ id: selected.strategyId, name: selected.strategyName, version: selected.strategyVersion, contentHash: selected.strategySnapshotHash }]).map((strategy) => <span key={strategy.id}>{strategy.name} · v{strategy.version} · {strategy.contentHash.slice(0, 8)}</span>)}</dd></div><div><dt>组合规则</dt><dd>任一策略触发即执行</dd></div><div><dt>单次仓位</dt><dd>{selected.positionPercent}%</dd></div><div><dt>止损 / 止盈</dt><dd>{selected.stopLoss}% / {selected.takeProfit}%</dd></div><div><dt>撮合规则</dt><dd>佣金 0.025% · 滑点 0.1%</dd></div></dl></section><section className="paper-task-card"><header><span>自动检查与通知</span><b className={selected.automation?.enabled ? "running" : ""}>{selected.automation ? selected.automation.enabled ? "运行中" : "已停用" : "未配置"}</b></header>{selected.automation ? <><p>{selected.automation.dataMode === "realtime" ? `实时行情 · 每 ${selected.automation.intervalMinutes} 分钟` : `免费日K · ${selected.automation.runTime}`} · {APP_TIME_ZONE}</p><small>最近运行：{selected.automation.lastStatus === "failed" ? `失败 · ${selected.automation.lastError || "请查看运行记录"}` : selected.automation.lastStatus === "retrying" ? "自动重试中" : selected.automation.lastStatus === "succeeded" ? "成功" : "等待首次运行"}</small><small>渠道：{selected.automation.notificationChannelNames.join("、") || "未配置"}</small><button onClick={() => onConfigureTask(targetFor(selected))}>管理定时任务 →</button></> : <><p>不配置任务也可以每天手动更新并查看收益。</p><small>配置后，任一策略触发都会执行模拟成交并发送通知。</small><button onClick={() => onConfigureTask(targetFor(selected))}>＋ 配置定时任务</button></>}</section></div>
         <section className="paper-position-card"><header><div><span>POSITION</span><b>当前持仓</b></div><small>{selected.position ? "1 个持仓" : "当前空仓"}</small></header>{selected.position ? <div className="paper-position-row"><span><b>{selected.position.stockName}</b><small>{selected.position.symbol}</small></span><span><small>数量</small><b>{selected.position.shares.toLocaleString("zh-CN")} 股</b></span><span><small>成本 / 现价</small><b>{selected.position.averageCost.toFixed(3)} / {selected.position.lastPrice.toFixed(3)}</b></span><span><small>浮动盈亏</small><b className={selected.metrics.unrealizedPnl >= 0 ? "up" : "down"}>{money(selected.metrics.unrealizedPnl, 2)}</b></span></div> : <div className="paper-no-position">等待策略产生买入信号后建立模拟持仓</div>}</section>
         <section className="paper-trades-card"><header><div><span>TRADES · ASIA/SHANGHAI</span><b>最近成交</b></div><small>共 {selected.tradeCount} 笔</small></header>{selected.trades.length ? <div className="paper-trade-list">{selected.trades.slice(0, 12).map((trade) => <div key={trade.id}><time>{formatAppDateTime(trade.executedAt)}</time><i className={trade.action}>{trade.action === "buy" ? "买入" : "卖出"}</i><span><b>{trade.shares.toLocaleString("zh-CN")} 股 × {trade.executionPrice.toFixed(3)}</b><small>{trade.reason}</small></span><em className={trade.realizedPnl >= 0 ? "up" : "down"}>{trade.action === "sell" ? money(trade.realizedPnl, 2) : `佣金 ${trade.commission.toFixed(2)}`}</em></div>)}</div> : <div className="paper-no-position">还没有模拟成交记录</div>}</section>
       </> : <div className="paper-empty-detail"><i>◎</i><h3>创建第一个模拟盘</h3><p>选择股票、策略和本金，系统会为它建立独立资金账本。</p><button className="primary-studio-button" onClick={() => setFormAccount("new")}>新建模拟盘</button></div>}</section>

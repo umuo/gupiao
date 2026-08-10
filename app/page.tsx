@@ -5,7 +5,8 @@ import { AuthGate } from "./auth-gate";
 import { NotificationCenter } from "./notification-center";
 import { PaperAccountCenter } from "./paper-account-center";
 import type { PaperAccountTaskTarget } from "./paper-account-types";
-import { average, signalFor, standardDeviation, type Kline } from "./strategy-engine";
+import { combinedSignalFor } from "./strategy-combination";
+import { average, standardDeviation, type Kline } from "./strategy-engine";
 import { StrategyStudio, type StudioMode } from "./strategy-studio";
 import { strategyRuleSummary, type SavedStrategy } from "./strategy-model";
 import { TaskCenter } from "./task-center";
@@ -111,7 +112,7 @@ function toSymbol(code: string) {
   return `${code}.BJ`;
 }
 
-function runBacktest(bars: Kline[], strategy: Strategy, initialCapital: number, positionPercent: number, stopLoss: number, takeProfit: number): BacktestResult {
+function runBacktest(bars: Kline[], strategies: Strategy[], initialCapital: number, positionPercent: number, stopLoss: number, takeProfit: number): BacktestResult {
   if (bars.length < 25) return { ...emptyBacktest, finalEquity: initialCapital };
 
   const commissionRate = 0.00025;
@@ -127,7 +128,7 @@ function runBacktest(bars: Kline[], strategy: Strategy, initialCapital: number, 
   bars.forEach((bar, index) => {
     const equityBefore = cash + shares * bar.close;
     if (shares === 0) {
-      const buySignal = signalFor(strategy, bars, index, "buy");
+      const buySignal = combinedSignalFor(strategies, bars, index, "buy");
       if (buySignal.active) {
         const executionPrice = bar.close * (1 + slippageRate);
         const allocation = Math.min(cash, equityBefore * positionPercent / 100);
@@ -143,7 +144,7 @@ function runBacktest(bars: Kline[], strategy: Strategy, initialCapital: number, 
       }
     } else {
       const returnSinceEntry = bar.close / entryPrice - 1;
-      const strategySell = signalFor(strategy, bars, index, "sell");
+      const strategySell = combinedSignalFor(strategies, bars, index, "sell");
       const hitStopLoss = returnSinceEntry <= -stopLoss / 100;
       const hitTakeProfit = returnSinceEntry >= takeProfit / 100;
       if (strategySell.active || hitStopLoss || hitTakeProfit) {
@@ -518,7 +519,7 @@ function formatPercent(value: number, signed = true) {
 export default function Home() {
   const [watchlist, setWatchlist] = useState<WatchItem[]>(initialWatchlist);
   const [selectedStock, setSelectedStock] = useState("601939");
-  const [selectedStrategy, setSelectedStrategy] = useState<Strategy>(builtinStrategies[0]);
+  const [selectedStrategyIds, setSelectedStrategyIds] = useState<string[]>([builtinStrategies[0].id]);
   const [strategyTab, setStrategyTab] = useState<Strategy["horizon"]>("short");
   const [customStrategies, setCustomStrategies] = useState<Strategy[]>([]);
   const [studioMode, setStudioMode] = useState<StudioMode>(null);
@@ -557,6 +558,10 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const realtimeQuotesRef = useRef<Record<string, RealtimeQuote>>({});
   const allStrategies = useMemo(() => [...builtinStrategies, ...customStrategies], [customStrategies]);
+  const selectedStrategies = useMemo(() => selectedStrategyIds.flatMap((id) => {
+    const strategy = allStrategies.find((item) => item.id === id);
+    return strategy ? [strategy] : [];
+  }), [allStrategies, selectedStrategyIds]);
   const strategyGroups = useMemo<Array<{ id: Strategy["horizon"]; label: string; note: string; items: Strategy[] }>>(() => [
     { id: "short", label: "短线策略", note: "约 1—20 个交易日", items: allStrategies.filter((strategy) => strategy.horizon === "short") },
     { id: "medium", label: "中期策略", note: "约 1—6 个月", items: allStrategies.filter((strategy) => strategy.horizon === "medium") },
@@ -767,14 +772,14 @@ export default function Home() {
           window.setTimeout(() => {
             setRunning(false);
             setRunCount((count) => count + 1);
-            setToast(`${selectedStrategy.name}已基于真实日K重新计算`);
+            setToast(`${selectedStrategies.length} 个策略已基于真实日K重新计算`);
           }, 160);
         }
         return next;
       });
     }, 80);
     return () => window.clearInterval(timer);
-  }, [running, selectedStrategy.name]);
+  }, [running, selectedStrategies.length]);
 
   useEffect(() => {
     const query = search.trim();
@@ -832,7 +837,7 @@ export default function Home() {
     const sizes: Record<string, number> = { "近1月": 22, "近3月": 66, "近6月": 132 };
     return allBars.slice(-Math.min(allBars.length, sizes[period] ?? 132));
   }, [allBars, period]);
-  const backtest = useMemo(() => runBacktest(periodBars, selectedStrategy, initialCapital, position, stopLoss, takeProfit), [periodBars, selectedStrategy, initialCapital, position, stopLoss, takeProfit]);
+  const backtest = useMemo(() => runBacktest(periodBars, selectedStrategies, initialCapital, position, stopLoss, takeProfit), [periodBars, selectedStrategies, initialCapital, position, stopLoss, takeProfit]);
   const selectedItem = watchlist.find((item) => item.code === selectedStock) ?? watchlist[0];
   const latestBar = allBars.at(-1);
   const realtimeLabel = realtimeStatus === "live" ? "实时行情 · 10秒轮询" : realtimeStatus === "loading" ? "实时行情连接中" : realtimeStatus === "error" ? "实时行情重试中" : "历史日K行情";
@@ -860,10 +865,20 @@ export default function Home() {
     setProgress(0); setRunning(true);
   };
 
+  const toggleBacktestStrategy = (strategy: Strategy) => {
+    if (selectedStrategyIds.includes(strategy.id)) {
+      if (selectedStrategyIds.length === 1) { setToast("回测至少需要保留一个策略"); return; }
+      setSelectedStrategyIds(selectedStrategyIds.filter((id) => id !== strategy.id));
+      return;
+    }
+    if (selectedStrategyIds.length >= 8) { setToast("一次最多同时启用 8 个策略"); return; }
+    setSelectedStrategyIds([...selectedStrategyIds, strategy.id]);
+  };
+
   const handleStrategyCreated = (saved: SavedStrategy) => {
     const strategy: Strategy = { ...saved, summary: strategyRuleSummary(saved.entryRules, saved.entryLogic), color: "#f4c95d", builtin: false, horizon: "custom" };
     setCustomStrategies((items) => [strategy, ...items]);
-    setSelectedStrategy(strategy);
+    setSelectedStrategyIds([strategy.id]);
     setStrategyTab("custom");
     setStudioMode(null);
     setToast(`${strategy.name}已保存并开始回测`);
@@ -875,7 +890,9 @@ export default function Home() {
     const response = await fetch("/api/strategies", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
     if (!response.ok) { setToast("策略删除失败，请重试"); return; }
     setCustomStrategies((items) => items.filter((strategy) => strategy.id !== id));
-    if (selectedStrategy.id === id) { setSelectedStrategy(builtinStrategies[0]); setStrategyTab("short"); }
+    const resetToDefault = selectedStrategyIds.length === 1 && selectedStrategyIds[0] === id;
+    setSelectedStrategyIds((current) => resetToDefault ? [builtinStrategies[0].id] : current.filter((strategyId) => strategyId !== id));
+    if (resetToDefault) setStrategyTab("short");
     setToast(`${target.name}已删除`);
   };
 
@@ -886,7 +903,7 @@ export default function Home() {
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
-    setViewer(null); setCustomStrategies([]); setSelectedStrategy(builtinStrategies[0]); setStrategyTab("short"); setShowAccount(false); setShowPaperAccounts(false); setTaskTarget(null);
+    setViewer(null); setCustomStrategies([]); setSelectedStrategyIds([builtinStrategies[0].id]); setStrategyTab("short"); setShowAccount(false); setShowPaperAccounts(false); setTaskTarget(null);
   };
 
   const editCapital = (rawValue: string) => {
@@ -929,7 +946,7 @@ export default function Home() {
         </aside>
 
         <section className="main-column">
-          <section className="hero panel"><div className="hero-copy"><div className="eyebrow"><i className="pulse-dot" /> REAL DATA BACKTEST</div><h1>真实日K策略驾驶舱</h1><p>使用 TickFlow 上市以来的前复权日线计算策略信号、虚拟成交与资金曲线。</p></div><div className="hero-meta"><div><span>当前策略</span><b>{selectedStrategy.name}</b></div><div><span>历史数据</span><b className={historyStatus === "ready" ? "active-status" : ""}>{historyStatus === "ready" ? `● ${allBars.length} 根` : historyStatus === "loading" ? "◌ 全量读取中" : "× 已回退"}</b></div><div><span>计算频率</span><b>日线 · 收盘后</b></div></div></section>
+          <section className="hero panel"><div className="hero-copy"><div className="eyebrow"><i className="pulse-dot" /> REAL DATA BACKTEST</div><h1>真实日K策略驾驶舱</h1><p>多个策略可同时参与回测；任一策略产生信号即可执行买入或卖出。</p></div><div className="hero-meta"><div><span>当前策略组合</span><b>{selectedStrategies.map((strategy) => strategy.name).join("、")}</b></div><div><span>历史数据</span><b className={historyStatus === "ready" ? "active-status" : ""}>{historyStatus === "ready" ? `● ${allBars.length} 根` : historyStatus === "loading" ? "◌ 全量读取中" : "× 已回退"}</b></div><div><span>组合规则</span><b>任一触发 · 日线</b></div></div></section>
 
           <section className="metrics-grid" aria-label="真实日K回测绩效">
             <Metric label="回测总资产" value={backtest.equityValues.length ? `¥ ${Math.round(backtest.finalEquity).toLocaleString("zh-CN")}` : "—"} />
@@ -951,10 +968,10 @@ export default function Home() {
           <section className="strategy-panel panel">
             <div className="panel-heading compact"><div><span className="eyebrow">STRATEGY</span><h2>策略引擎 <small>{allStrategies.length}</small></h2></div><div className="strategy-tools"><button onClick={() => setStudioMode("docs")}>文档</button><button className="ai-tool" onClick={() => setStudioMode("ai")}>✦ AI</button><button className="new-tool" onClick={() => setStudioMode("manual")} aria-label="新建策略">＋</button></div></div>
             <div className="strategy-tabs" role="tablist" aria-label="策略周期分类">{strategyGroups.map((group) => <button key={group.id} role="tab" aria-selected={strategyTab === group.id} className={strategyTab === group.id ? "active" : ""} onClick={() => setStrategyTab(group.id)}><span>{group.label}</span><em>{group.items.length}</em></button>)}</div>
-            <div className="strategy-list" role="tabpanel" aria-label={activeStrategyGroup.label}><section className="strategy-group"><header><b>{activeStrategyGroup.label}</b><span>{activeStrategyGroup.note}</span></header>{activeStrategyGroup.items.map((strategy) => <button key={strategy.id} className={`strategy-card ${selectedStrategy.id === strategy.id ? "active" : ""}`} onClick={() => setSelectedStrategy(strategy)} style={{ "--strategy-color": strategy.color } as CSSProperties}><span className="strategy-radio"><i /></span><span><b>{strategy.name}{!strategy.builtin && <sup>我的</sup>}</b><small>{strategy.summary}</small></span><em>{strategy.tag}</em></button>)}{!activeStrategyGroup.items.length && <div className="strategy-empty"><b>还没有自定义策略</b><span>点击右上角 ＋ 手动创建，或使用 AI 生成。</span></div>}</section></div>
+            <div className="strategy-list" role="tabpanel" aria-label={activeStrategyGroup.label}><section className="strategy-group"><header><b>{activeStrategyGroup.label}</b><span>{activeStrategyGroup.note} · 已选 {selectedStrategies.length}/8</span></header>{activeStrategyGroup.items.map((strategy) => { const selected = selectedStrategyIds.includes(strategy.id); return <button key={strategy.id} aria-pressed={selected} className={`strategy-card ${selected ? "active" : ""}`} onClick={() => toggleBacktestStrategy(strategy)} style={{ "--strategy-color": strategy.color } as CSSProperties}><span className="strategy-radio"><i>{selected ? "✓" : ""}</i></span><span><b>{strategy.name}{!strategy.builtin && <sup>我的</sup>}</b><small>{strategy.summary}</small></span><em>{strategy.tag}</em></button>; })}{!activeStrategyGroup.items.length && <div className="strategy-empty"><b>还没有自定义策略</b><span>点击右上角 ＋ 手动创建，或使用 AI 生成。</span></div>}</section></div>
             <div className="capital-config"><div className="section-label"><b>临时回测资金</b><span>不会保存为模拟盘</span></div><label htmlFor="initial-capital">回测本金</label><div className="capital-input"><i>¥</i><input id="initial-capital" type="text" value={capitalInput} onChange={(event) => editCapital(event.target.value)} onBlur={commitCapital} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} aria-describedby="capital-hint" /></div><small id="capital-hint" className="capital-hint">可输入 20000、2w 或 2万，按回车应用</small><div className="capital-presets">{[20_000, 100_000, 500_000, 1_000_000].map((amount) => <button key={amount} className={initialCapital === amount ? "active" : ""} onClick={() => { setInitialCapital(amount); setCapitalInput(String(amount)); }}>{amount / 10_000}万</button>)}</div></div>
             <div className="parameters"><div className="section-label"><b>执行参数</b><button onClick={() => { setPosition(30); setStopLoss(8); setTakeProfit(22); }}>恢复默认</button></div><label><span>单票仓位 <b>{position}%</b></span><input type="range" min="10" max="100" step="5" value={position} onChange={(event) => setPosition(Number(event.target.value))} /></label><div className="parameter-pair"><label><span>止损线</span><div><input type="number" min="1" max="20" value={stopLoss} onChange={(event) => setStopLoss(Number(event.target.value))} /><i>%</i></div></label><label><span>止盈线</span><div><input type="number" min="5" max="50" value={takeProfit} onChange={(event) => setTakeProfit(Number(event.target.value))} /><i>%</i></div></label></div><button className={`toggle-row ${autoRebalance ? "on" : ""}`} onClick={() => setAutoRebalance((value) => !value)} aria-pressed={autoRebalance}><span><b>收盘后自动调仓</b><small>新日K到达后检查信号</small></span><i><em /></i></button></div>
-            <div className="execution-flow"><div className="section-label"><b>数据与执行流程</b><span>{dataStatus === "ready" ? "4 / 4 就绪" : "同步中"}</span></div><ol><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "1"}</i><span><b>读取 TickFlow 日K</b><small>{allBars.length || "—"} 根 · 前复权 · 真实历史数据</small></span></li><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "2"}</i><span><b>计算策略信号</b><small>{selectedStrategy.name} · 仅使用OHLCV</small></span></li><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "3"}</i><span><b>风控检查</b><small>仓位 / 止损 / 止盈</small></span></li><li className="ready"><i>4</i><span><b>虚拟撮合</b><small>佣金 0.025% · 滑点 0.1%</small></span></li></ol></div>
+            <div className="execution-flow"><div className="section-label"><b>数据与执行流程</b><span>{dataStatus === "ready" ? "4 / 4 就绪" : "同步中"}</span></div><ol><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "1"}</i><span><b>读取 TickFlow 日K</b><small>{allBars.length || "—"} 根 · 前复权 · 真实历史数据</small></span></li><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "2"}</i><span><b>计算组合信号</b><small>{selectedStrategies.length} 个策略 · 任一触发</small></span></li><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "3"}</i><span><b>风控检查</b><small>仓位 / 止损 / 止盈</small></span></li><li className="ready"><i>4</i><span><b>虚拟撮合</b><small>佣金 0.025% · 滑点 0.1%</small></span></li></ol></div>
             <button className={`run-button ${running ? "running" : ""}`} onClick={runSimulation} disabled={running || dataStatus === "error"}><span>{running ? `正在计算真实日K ${progress}%` : "▶ 同步并运行回测"}</span><i style={{ width: `${progress}%` }} /></button><p className="run-note">已运行 {runCount} 次 · TickFlow 免费版非实时 · 不会产生真实交易</p>
           </section>
 

@@ -3,8 +3,10 @@ import { getDb } from "../db";
 import { automationNotificationChannels, automationRuns, automations, notificationChannels, notificationLogs, userSettings } from "../db/schema";
 import { deliverNotification } from "./notification-delivery";
 import { decryptSecret } from "./secret-box";
-import { executePaperSignal, paperAccountState, paperStrategyFrom, refreshPaperAccountValuation, shanghaiDate } from "./paper-account-service";
-import { signalFor, type Kline, type SignalStrategy } from "./strategy-engine";
+import { executePaperSignal, paperAccountState, paperStrategiesFrom, refreshPaperAccountValuation, shanghaiDate } from "./paper-account-service";
+import { combinedSignalFor } from "./strategy-combination";
+import { type Kline, type SignalStrategy } from "./strategy-engine";
+import { parseStrategySnapshots } from "./strategy-version";
 import { fetchTickFlowKlines, fetchTickFlowQuote } from "./tickflow-client";
 import { APP_TIME_ZONE, toAppIsoString } from "./timezone";
 import { aShareTradingDayStatus } from "./trading-calendar";
@@ -77,15 +79,14 @@ function scheduleKeyFor(row: AutomationRow, now = new Date()) {
   return `realtime:${clock.date}:${String(Math.floor(bucket / 60)).padStart(2, "0")}:${String(bucket % 60).padStart(2, "0")}`;
 }
 
-function strategyFrom(row: AutomationRow): SignalStrategy {
-  const parsed = JSON.parse(row.strategyDefinition) as Partial<SignalStrategy>;
-  if (!Array.isArray(parsed.entryRules) || !Array.isArray(parsed.exitRules)) throw new Error("任务中的策略定义无效");
-  return {
-    entryLogic: parsed.entryLogic === "or" ? "or" : "and",
-    exitLogic: parsed.exitLogic === "and" ? "and" : "or",
-    entryRules: parsed.entryRules,
-    exitRules: parsed.exitRules,
-  };
+function strategiesFrom(row: AutomationRow): Array<SignalStrategy & { id: string; name: string }> {
+  return parseStrategySnapshots(row.strategySnapshots, {
+    id: row.strategyId,
+    name: row.strategyName,
+    definition: row.strategyDefinition,
+    version: row.strategyVersion,
+    contentHash: row.strategySnapshotHash,
+  });
 }
 
 function mergeQuoteIntoDailyBars(bars: Kline[], quote: Awaited<ReturnType<typeof fetchTickFlowQuote>>) {
@@ -160,21 +161,21 @@ export async function runAutomation(row: AutomationRow) {
   if (paperState && row.paperAccountId) {
     await refreshPaperAccountValuation(row.paperAccountId, row.userId, bar.close, shanghaiDate(new Date(bar.timestamp)));
   }
-  const strategy = paperState ? paperStrategyFrom(paperState.account) : strategyFrom(row);
+  const strategies = paperState ? paperStrategiesFrom(paperState.account) : strategiesFrom(row);
   const isHolding = paperState ? Boolean(paperState.position) : row.positionState === "holding";
   const entryPrice = paperState?.position?.averageCost ?? row.entryPrice;
   let action: "buy" | "sell" | null = null;
   let reason = "";
 
   if (!isHolding) {
-    const buy = signalFor(strategy, bars, bars.length - 1, "buy");
+    const buy = combinedSignalFor(strategies, bars, bars.length - 1, "buy");
     if (buy.active) {
       action = "buy";
       reason = buy.reason;
     }
   } else {
     const returnRate = entryPrice ? (bar.close / entryPrice - 1) * 100 : 0;
-    const sell = signalFor(strategy, bars, bars.length - 1, "sell");
+    const sell = combinedSignalFor(strategies, bars, bars.length - 1, "sell");
     if (entryPrice && returnRate <= -stopLoss) {
       action = "sell";
       reason = `触发 ${stopLoss}% 止损`;
@@ -195,7 +196,7 @@ export async function runAutomation(row: AutomationRow) {
   };
   if (!action) {
     await getDb().update(automations).set(commonUpdate).where(eq(automations.id, row.id));
-    return { action: null, price: bar.close, reason: "本次未出现买卖信号", source };
+    return { action: null, price: bar.close, reason: `${strategies.length} 个策略本次均未出现买卖信号`, source };
   }
 
   const signalKey = `${action}:${clock.date}:${reason}`;
@@ -243,7 +244,9 @@ export async function runAutomation(row: AutomationRow) {
     symbol,
     stockName,
     strategyId: row.strategyId,
-    strategyName: row.strategyName,
+    strategyName: strategies.map((strategy) => strategy.name).join("、"),
+    strategyIds: strategies.map((strategy) => strategy.id),
+    strategyNames: strategies.map((strategy) => strategy.name),
     price: execution?.executionPrice ?? bar.close,
     signalPrice: bar.close,
     executionPrice: execution?.executionPrice ?? bar.close,

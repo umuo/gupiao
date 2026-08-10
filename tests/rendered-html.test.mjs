@@ -308,3 +308,33 @@ test("adds exchange-calendar scheduling, reliable execution history, bounded dat
   assert.match(strategyRoute, /strategySnapshotHash/);
   assert.match(strategyStudio, /不可变规则快照/);
 });
+
+test("supports multi-strategy backtests, paper accounts, and automation execution", async () => {
+  const [page, paperCenter, paperRoute, tasks, automationRoute, runner, combination, schema, migration] = await Promise.all([
+    read("app/page.tsx"),
+    read("app/paper-account-center.tsx"),
+    read("app/api/paper-accounts/route.ts"),
+    read("app/task-center.tsx"),
+    read("app/api/automations/route.ts"),
+    read("app/automation-runner.ts"),
+    read("app/strategy-combination.ts"),
+    read("db/schema.ts"),
+    read("drizzle/0008_faithful_shard.sql"),
+  ]);
+  assert.match(page, /selectedStrategyIds/);
+  assert.match(page, /toggleBacktestStrategy/);
+  assert.match(page, /任一策略产生信号即可执行买入或卖出/);
+  assert.match(paperCenter, /paper-strategy-picker/);
+  assert.match(paperCenter, /strategies: selectedStrategies/);
+  assert.match(paperRoute, /createStrategySnapshots/);
+  assert.match(paperRoute, /strategySnapshots: strategySnapshotsJson\(strategies\)/);
+  assert.match(tasks, /task-strategy-picker/);
+  assert.match(tasks, /targetAccount\.strategies\.length/);
+  assert.match(automationRoute, /parseStrategySnapshots\(account\.strategySnapshots/);
+  assert.match(runner, /combinedSignalFor\(strategies/);
+  assert.match(runner, /strategyNames: strategies\.map/);
+  assert.match(combination, /matches\.map\(\(match\) => `【\$\{match\.name\}】/);
+  assert.ok((schema.match(/strategySnapshots: text\("strategy_snapshots"\)/g) ?? []).length === 2);
+  assert.match(migration, /ALTER TABLE `automations` ADD `strategy_snapshots`/);
+  assert.match(migration, /ALTER TABLE `paper_accounts` ADD `strategy_snapshots`/);
+});

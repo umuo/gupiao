@@ -3,8 +3,7 @@ import { getDb } from "../../../db";
 import { automationNotificationChannels, automationRuns, automations, notificationChannels, paperAccounts, paperEquitySnapshots, paperPositions, paperTrades } from "../../../db/schema";
 import { getAppUser } from "../../auth";
 import { shanghaiDate } from "../../paper-account-service";
-import { sanitizeStrategyDraft } from "../../strategy-model";
-import { strategySnapshotHash, strategyVersionNumber } from "../../strategy-version";
+import { createStrategySnapshots, parseStrategySnapshots, strategySnapshotsJson } from "../../strategy-version";
 
 const SYMBOL_PATTERN = /^\d{6}\.(SH|SZ|BJ)$/;
 const MAX_ACCOUNTS = 100;
@@ -16,8 +15,18 @@ function boundedNumber(value: unknown, label: string, minimum: number, maximum: 
   return number;
 }
 
-function strategyDefinition(strategy: ReturnType<typeof sanitizeStrategyDraft>) {
+function strategyDefinition(strategy: { entryLogic: string; exitLogic: string; entryRules: unknown[]; exitRules: unknown[] }) {
   return JSON.stringify({ entryLogic: strategy.entryLogic, exitLogic: strategy.exitLogic, entryRules: strategy.entryRules, exitRules: strategy.exitRules });
+}
+
+function snapshotsFor(account: typeof paperAccounts.$inferSelect) {
+  return parseStrategySnapshots(account.strategySnapshots, {
+    id: account.strategyId,
+    name: account.strategyName,
+    definition: account.strategyDefinition,
+    version: account.strategyVersion,
+    contentHash: account.strategySnapshotHash,
+  });
 }
 
 function duplicateMessage(error: unknown) {
@@ -65,6 +74,7 @@ async function accountViews(userId: string, options: { page?: number; pageSize?:
     return {
       ...account,
       strategyDefinition: JSON.parse(account.strategyDefinition),
+      strategies: snapshotsFor(account),
       position,
       trades: accountTrades.slice(0, 30),
       tradeCount: countByAccount.get(account.id) ?? 0,
@@ -110,19 +120,18 @@ export async function POST(request: Request) {
     const symbol = String(payload.symbol ?? "").trim().toUpperCase();
     const stockName = String(payload.stockName ?? "").trim().slice(0, 30);
     const strategyId = String(payload.strategyId ?? "").trim().slice(0, 100);
-    const strategy = sanitizeStrategyDraft(payload.strategy);
-    const strategyVersion = strategyVersionNumber(payload.strategy);
-    const strategyHash = await strategySnapshotHash(strategy);
+    const strategies = await createStrategySnapshots(payload.strategies ?? payload.strategy, strategyId);
+    const strategy = strategies[0];
     const initialCapital = boundedNumber(payload.initialCapital, "初始本金", 1, 1_000_000_000_000);
     const positionPercent = boundedNumber(payload.positionPercent ?? 30, "单票仓位", 1, 100);
     const stopLoss = boundedNumber(payload.stopLoss ?? 8, "止损", 0.1, 100);
     const takeProfit = boundedNumber(payload.takeProfit ?? 22, "止盈", 0.1, 500);
-    if (!name || !stockName || !strategyId || !SYMBOL_PATTERN.test(symbol)) throw new Error("请完整填写模拟盘名称、股票和策略");
+    if (!name || !stockName || !strategy.id || !SYMBOL_PATTERN.test(symbol)) throw new Error("请完整填写模拟盘名称、股票和策略");
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
     const db = getDb();
     await db.batch([
-      db.insert(paperAccounts).values({ id, userId: user.userId, name, description, symbol, stockName, strategyId, strategyName: strategy.name, strategyDefinition: strategyDefinition(strategy), strategyVersion, strategySnapshotHash: strategyHash, initialCapital, cash: initialCapital, positionPercent, stopLoss, takeProfit, updatedAt: now }),
+      db.insert(paperAccounts).values({ id, userId: user.userId, name, description, symbol, stockName, strategyId: strategy.id, strategyName: strategy.name, strategyDefinition: strategyDefinition(strategy), strategyVersion: strategy.version, strategySnapshotHash: strategy.contentHash, strategySnapshots: strategySnapshotsJson(strategies), initialCapital, cash: initialCapital, positionPercent, stopLoss, takeProfit, updatedAt: now }),
       db.insert(paperEquitySnapshots).values({ id: crypto.randomUUID(), userId: user.userId, paperAccountId: id, snapshotDate: shanghaiDate(), equity: initialCapital, cash: initialCapital, marketValue: 0, totalReturn: 0, realizedPnl: 0, unrealizedPnl: 0, updatedAt: now }),
     ]);
     return Response.json({ account: (await accountViews(user.userId, { id })).accounts[0] }, { status: 201 });
@@ -144,6 +153,7 @@ export async function PATCH(request: Request) {
       getDb().select({ id: paperTrades.id }).from(paperTrades).where(and(eq(paperTrades.paperAccountId, id), eq(paperTrades.userId, user.userId))).limit(1),
     ]);
     const coreLocked = position.length > 0 || tradeRows.length > 0;
+    const existingStrategies = snapshotsFor(existing);
     const name = String(payload.name ?? existing.name).trim().slice(0, 40);
     const description = String(payload.description ?? existing.description).trim().slice(0, 200);
     const status = payload.status === undefined ? existing.status : payload.status === "paused" ? "paused" : "active";
@@ -156,17 +166,22 @@ export async function PATCH(request: Request) {
       const symbol = String(payload.symbol ?? existing.symbol).trim().toUpperCase();
       const stockName = String(payload.stockName ?? existing.stockName).trim().slice(0, 30);
       const strategyId = String(payload.strategyId ?? existing.strategyId).trim().slice(0, 100);
-      const strategy = sanitizeStrategyDraft(payload.strategy ?? { name: existing.strategyName, description: "", tag: "模拟盘", ...JSON.parse(existing.strategyDefinition) });
-      const strategyVersion = payload.strategy === undefined ? existing.strategyVersion : strategyVersionNumber(payload.strategy);
-      const strategyHash = await strategySnapshotHash(strategy);
+      const strategies = payload.strategies === undefined && payload.strategy === undefined
+        ? existingStrategies
+        : await createStrategySnapshots(payload.strategies ?? payload.strategy, strategyId);
+      const strategy = strategies[0];
       const initialCapital = boundedNumber(payload.initialCapital ?? existing.initialCapital, "初始本金", 1, 1_000_000_000_000);
-      if (!stockName || !strategyId || !SYMBOL_PATTERN.test(symbol)) throw new Error("股票或策略配置无效");
-      Object.assign(changes, { symbol, stockName, strategyId, strategyName: strategy.name, strategyDefinition: strategyDefinition(strategy), strategyVersion, strategySnapshotHash: strategyHash, initialCapital, cash: initialCapital });
-    } else if (["symbol", "stockName", "strategyId", "strategy", "initialCapital"].some((key) => key in payload)) {
+      if (!stockName || !strategy.id || !SYMBOL_PATTERN.test(symbol)) throw new Error("股票或策略配置无效");
+      Object.assign(changes, { symbol, stockName, strategyId: strategy.id, strategyName: strategy.name, strategyDefinition: strategyDefinition(strategy), strategyVersion: strategy.version, strategySnapshotHash: strategy.contentHash, strategySnapshots: strategySnapshotsJson(strategies), initialCapital, cash: initialCapital });
+    } else if (["symbol", "stockName", "strategyId", "strategy", "strategies", "initialCapital"].some((key) => key in payload)) {
       const requestedCapital = Number(payload.initialCapital ?? existing.initialCapital);
       const requestedSymbol = String(payload.symbol ?? existing.symbol);
-      const requestedStrategy = String(payload.strategyId ?? existing.strategyId);
-      if (requestedCapital !== existing.initialCapital || requestedSymbol !== existing.symbol || requestedStrategy !== existing.strategyId) throw new Error("已有成交后不能修改本金、股票或策略；可以复制创建新的模拟盘");
+      const requestedStrategies = payload.strategies === undefined && payload.strategy === undefined
+        ? existingStrategies
+        : await createStrategySnapshots(payload.strategies ?? payload.strategy, String(payload.strategyId ?? existing.strategyId));
+      const currentIds = existingStrategies.map((item) => item.id).sort().join(",");
+      const requestedIds = requestedStrategies.map((item) => item.id).sort().join(",");
+      if (requestedCapital !== existing.initialCapital || requestedSymbol !== existing.symbol || requestedIds !== currentIds) throw new Error("已有成交后不能修改本金、股票或策略；可以复制创建新的模拟盘");
     }
     const [account] = await getDb().update(paperAccounts).set(changes).where(and(eq(paperAccounts.id, id), eq(paperAccounts.userId, user.userId))).returning();
     if (!coreLocked && account.initialCapital !== existing.initialCapital) {
@@ -184,6 +199,7 @@ export async function PATCH(request: Request) {
         strategyDefinition: account.strategyDefinition,
         strategyVersion: account.strategyVersion,
         strategySnapshotHash: account.strategySnapshotHash,
+        strategySnapshots: account.strategySnapshots,
         stopLoss: account.stopLoss,
         takeProfit: account.takeProfit,
         updatedAt: new Date().toISOString(),

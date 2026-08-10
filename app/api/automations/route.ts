@@ -2,8 +2,7 @@ import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { automationNotificationChannels, automationRuns, automations, notificationChannels, paperAccounts, paperPositions, userSettings } from "../../../db/schema";
 import { getAppUser } from "../../auth";
-import { sanitizeStrategyDraft } from "../../strategy-model";
-import { strategySnapshotHash, strategyVersionNumber } from "../../strategy-version";
+import { createStrategySnapshots, parseStrategySnapshots, strategySnapshotsJson, type StrategySnapshot } from "../../strategy-version";
 import { APP_TIME_ZONE } from "../../timezone";
 import { aShareTradingDayStatus, nextAShareTradingDay } from "../../trading-calendar";
 
@@ -12,8 +11,18 @@ const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const INTERVALS = new Set([1, 5, 15, 30, 60]);
 const MAX_AUTOMATIONS = 100;
 
+function snapshotsFor(row: Pick<typeof automations.$inferSelect, "strategyId" | "strategyName" | "strategyDefinition" | "strategyVersion" | "strategySnapshotHash" | "strategySnapshots">) {
+  return parseStrategySnapshots(row.strategySnapshots, {
+    id: row.strategyId,
+    name: row.strategyName,
+    definition: row.strategyDefinition,
+    version: row.strategyVersion,
+    contentHash: row.strategySnapshotHash,
+  });
+}
+
 function view(row: typeof automations.$inferSelect) {
-  return { ...row, strategyDefinition: JSON.parse(row.strategyDefinition), weekdays: JSON.parse(row.weekdays) };
+  return { ...row, strategyDefinition: JSON.parse(row.strategyDefinition), strategies: snapshotsFor(row), weekdays: JSON.parse(row.weekdays) };
 }
 
 export async function GET(request: Request) {
@@ -61,9 +70,8 @@ export async function POST(request: Request) {
       : [];
     let requestedStopLoss = Number(payload.stopLoss ?? 8);
     let requestedTakeProfit = Number(payload.takeProfit ?? 22);
-    let strategy = paperAccountId ? null : sanitizeStrategyDraft(payload.strategy);
-    let strategyVersion = strategyVersionNumber(payload.strategy);
-    let strategyHash = strategy ? await strategySnapshotHash(strategy) : "legacy";
+    let strategies: StrategySnapshot[] = paperAccountId ? [] : await createStrategySnapshots(payload.strategies ?? payload.strategy, strategyId);
+    if (strategies[0]) strategyId = strategies[0].id;
     let initialPositionState: "flat" | "holding" = "flat";
     let initialEntryPrice: number | null = null;
     let initialEnabled = true;
@@ -72,13 +80,16 @@ export async function POST(request: Request) {
       if (!account) throw new Error("关联的模拟盘不存在");
       const [existingTask] = await getDb().select({ id: automations.id }).from(automations).where(eq(automations.paperAccountId, paperAccountId)).limit(1);
       if (existingTask) throw new Error("该模拟盘已经配置了定时任务");
-      const definition = JSON.parse(account.strategyDefinition) as Record<string, unknown>;
-      strategy = sanitizeStrategyDraft({ name: account.strategyName, description: "模拟盘关联策略", tag: "模拟盘", ...definition });
+      strategies = parseStrategySnapshots(account.strategySnapshots, {
+        id: account.strategyId,
+        name: account.strategyName,
+        definition: account.strategyDefinition,
+        version: account.strategyVersion,
+        contentHash: account.strategySnapshotHash,
+      });
       symbol = account.symbol;
       stockName = account.stockName;
-      strategyId = account.strategyId;
-      strategyVersion = account.strategyVersion;
-      strategyHash = account.strategySnapshotHash;
+      strategyId = strategies[0].id;
       requestedStopLoss = account.stopLoss;
       requestedTakeProfit = account.takeProfit;
       initialEnabled = account.status === "active";
@@ -87,6 +98,7 @@ export async function POST(request: Request) {
       initialEntryPrice = position?.averageCost ?? null;
     }
     if (!Number.isFinite(requestedStopLoss) || !Number.isFinite(requestedTakeProfit)) throw new Error("止损止盈参数无效");
+    const strategy = strategies[0];
     if (!strategy) throw new Error("策略配置无效");
     const stopLoss = Math.min(100, Math.max(0.1, requestedStopLoss));
     const takeProfit = Math.min(500, Math.max(0.1, requestedTakeProfit));
@@ -111,8 +123,9 @@ export async function POST(request: Request) {
       strategyId,
       strategyName: strategy.name,
       strategyDefinition: definition,
-      strategyVersion,
-      strategySnapshotHash: strategyHash,
+      strategyVersion: strategy.version,
+      strategySnapshotHash: strategy.contentHash,
+      strategySnapshots: strategySnapshotsJson(strategies),
       dataMode,
       runTime,
       intervalMinutes,

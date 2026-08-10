@@ -17,6 +17,7 @@ type Automation = {
   strategyName: string;
   strategyVersion: number;
   strategySnapshotHash: string;
+  strategies: SavedStrategy[];
   notificationChannelNames: string[];
   notificationChannelIds: string[];
   dataMode: "daily" | "realtime";
@@ -79,7 +80,7 @@ export function TaskCenter({ open, watchlist, strategies, defaultStopLoss, defau
   const [error, setError] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [stockCode, setStockCode] = useState(watchlist[0]?.code ?? "601939");
-  const [strategyId, setStrategyId] = useState(strategies[0]?.id ?? "");
+  const [strategyIds, setStrategyIds] = useState<string[]>(strategies[0] ? [strategies[0].id] : []);
   const [channelIds, setChannelIds] = useState<string[]>([]);
   const [editingTaskChannels, setEditingTaskChannels] = useState<string | null>(null);
   const [taskChannelDraft, setTaskChannelDraft] = useState<string[]>([]);
@@ -90,15 +91,24 @@ export function TaskCenter({ open, watchlist, strategies, defaultStopLoss, defau
   const [stopLoss, setStopLoss] = useState(defaultStopLoss);
   const [takeProfit, setTakeProfit] = useState(defaultTakeProfit);
 
-  const effectiveStrategies = targetAccount && !strategies.some((strategy) => strategy.id === targetAccount.strategy.id) ? [targetAccount.strategy, ...strategies] : strategies;
+  const effectiveStrategies = targetAccount ? [...targetAccount.strategies, ...strategies.filter((strategy) => !targetAccount.strategies.some((snapshot) => snapshot.id === strategy.id))] : strategies;
   const effectiveStockCode = targetAccount ? targetAccount.symbol.split(".")[0] : watchlist.some((stock) => stock.code === stockCode) ? stockCode : (watchlist[0]?.code ?? "");
-  const effectiveStrategyId = targetAccount ? targetAccount.strategy.id : effectiveStrategies.some((strategy) => strategy.id === strategyId) ? strategyId : (effectiveStrategies[0]?.id ?? "");
+  const effectiveStrategyIds = targetAccount ? targetAccount.strategies.map((strategy) => strategy.id) : strategyIds.filter((id) => effectiveStrategies.some((strategy) => strategy.id === id));
   const enabledChannels = channels.filter((channel) => channel.enabled);
   const selectedChannelIds = channelIds.filter((id) => enabledChannels.some((channel) => channel.id === id));
   const selectedStock = targetAccount ? { code: effectiveStockCode, name: targetAccount.stockName } : watchlist.find((stock) => stock.code === effectiveStockCode) ?? watchlist[0];
-  const selectedStrategy = targetAccount?.strategy ?? effectiveStrategies.find((strategy) => strategy.id === effectiveStrategyId) ?? effectiveStrategies[0];
+  const selectedStrategies = effectiveStrategyIds.flatMap((id) => {
+    const strategy = effectiveStrategies.find((item) => item.id === id);
+    return strategy ? [strategy] : [];
+  });
   const activeTasks = useMemo(() => items.filter((item) => item.enabled).length, [items]);
   const linkedTask = targetAccount ? items.find((item) => item.paperAccountId === targetAccount.id) : null;
+
+  const toggleStrategy = (id: string) => {
+    setStrategyIds((current) => current.includes(id)
+      ? current.length === 1 ? current : current.filter((item) => item !== id)
+      : current.length >= 8 ? current : [...current, id]);
+  };
 
   const refresh = useCallback(async () => {
     setLoading(true); setError("");
@@ -146,7 +156,7 @@ export function TaskCenter({ open, watchlist, strategies, defaultStopLoss, defau
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setName(task?.name ?? `${targetAccount.name} · 策略通知`);
     setStockCode(targetAccount.symbol.split(".")[0]);
-    setStrategyId(targetAccount.strategy.id);
+    setStrategyIds(targetAccount.strategies.map((strategy) => strategy.id));
     setStopLoss(targetAccount.stopLoss);
     setTakeProfit(targetAccount.takeProfit);
     setDataMode(task?.dataMode ?? "daily");
@@ -158,7 +168,7 @@ export function TaskCenter({ open, watchlist, strategies, defaultStopLoss, defau
   if (!open) return null;
 
   const saveTask = async () => {
-    if (!selectedStock || !selectedStrategy) { setError("请先选择股票和策略"); return; }
+    if (!selectedStock || !selectedStrategies.length) { setError("请先选择股票和策略"); return; }
     if (!selectedChannelIds.length) { setError("请至少选择一个已启用的通知渠道"); return; }
     if (dataMode === "realtime" && !tickflow.configured) { setTab("data"); setError("实时任务需要先配置 TickFlow Key"); return; }
     setSaving(true); setError("");
@@ -168,7 +178,7 @@ export function TaskCenter({ open, watchlist, strategies, defaultStopLoss, defau
         method: taskId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(taskId
           ? { id: taskId, name, notificationChannelIds: selectedChannelIds, dataMode, runTime, intervalMinutes }
-          : { name, paperAccountId: targetAccount?.id, symbol: toSymbol(selectedStock.code), stockName: selectedStock.name, strategyId: selectedStrategy.id, strategy: selectedStrategy, notificationChannelIds: selectedChannelIds, dataMode, runTime, intervalMinutes, stopLoss, takeProfit }),
+          : { name, paperAccountId: targetAccount?.id, symbol: toSymbol(selectedStock.code), stockName: selectedStock.name, strategyId: selectedStrategies[0].id, strategies: selectedStrategies, notificationChannelIds: selectedChannelIds, dataMode, runTime, intervalMinutes, stopLoss, takeProfit }),
       });
       const payload = await response.json() as { automation?: Automation; error?: string };
       if (!response.ok || !payload.automation) throw new Error(payload.error || "创建任务失败");
@@ -230,9 +240,9 @@ export function TaskCenter({ open, watchlist, strategies, defaultStopLoss, defau
         {tab === "tasks" && <div className="automation-layout">
           <section className="automation-form">
             <div className="automation-section-title"><div><span>{linkedTask || targetAccount?.automation ? "EDIT TASK" : "NEW TASK"}</span><h3>{linkedTask || targetAccount?.automation ? "编辑策略任务" : "新建策略任务"}</h3></div><small>只执行模拟成交</small></div>
-            {targetAccount && <div className="task-account-lock"><i>◎</i><span><b>{targetAccount.name}</b><small>{targetAccount.stockName} · {targetAccount.strategy.name}</small></span><em>关联模拟盘</em></div>}
+            {targetAccount && <div className="task-account-lock"><i>◎</i><span><b>{targetAccount.name}</b><small>{targetAccount.stockName} · {targetAccount.strategies.length} 个策略同时生效</small></span><em>关联模拟盘</em></div>}
             <label><span>任务名称</span><input value={name} maxLength={50} onChange={(event) => setName(event.target.value)} /></label>
-            {!targetAccount && <div className="automation-form-grid"><label><span>自选股</span><select value={effectiveStockCode} onChange={(event) => setStockCode(event.target.value)}>{watchlist.map((stock) => <option key={stock.code} value={stock.code}>{stock.name} · {stock.code}</option>)}</select></label><label><span>策略</span><select value={effectiveStrategyId} onChange={(event) => setStrategyId(event.target.value)}>{effectiveStrategies.map((strategy) => <option key={strategy.id} value={strategy.id}>{strategy.name}</option>)}</select></label></div>}
+            {!targetAccount && <><label><span>自选股</span><select value={effectiveStockCode} onChange={(event) => setStockCode(event.target.value)}>{watchlist.map((stock) => <option key={stock.code} value={stock.code}>{stock.name} · {stock.code}</option>)}</select></label><fieldset className="task-strategy-picker"><legend>执行策略 <em>{selectedStrategies.length} / 8</em></legend><small>任一策略产生信号即可执行。</small><div>{effectiveStrategies.map((strategy) => { const selected = effectiveStrategyIds.includes(strategy.id); return <button type="button" aria-pressed={selected} className={selected ? "selected" : ""} key={strategy.id} onClick={() => toggleStrategy(strategy.id)}><i>{selected ? "✓" : ""}</i>{strategy.name}</button>; })}</div></fieldset></>}
             <div className="task-channel-field"><span>通知渠道 <em>可多选</em></span>{enabledChannels.length ? <div className="task-channel-picker">{enabledChannels.map((channel) => { const selected = selectedChannelIds.includes(channel.id); return <button key={channel.id} className={selected ? "selected" : ""} onClick={() => setChannelIds((current) => selected ? current.filter((id) => id !== channel.id) : [...current, channel.id])}><i>{selected ? "✓" : ""}</i><span><b>{channel.name}</b><small>{channel.type === "dingtalk" ? "钉钉" : channel.type === "feishu" ? "飞书" : "Webhook"}</small></span></button>; })}</div> : <button className="empty-channel-link" onClick={onOpenNotifications}>＋ 前往通知模块创建渠道</button>}<small>同一信号会同时发送到所有选中的渠道。</small></div>
             <div className="mode-switch"><button className={dataMode === "daily" ? "active" : ""} onClick={() => setDataMode("daily")}><b>免费日K</b><small>每天检查一次</small></button><button className={dataMode === "realtime" ? "active" : ""} onClick={() => setDataMode("realtime")}><b>实时行情</b><small>{tickflow.configured ? "TickFlow 已连接" : "需要 TickFlow Key"}</small></button></div>
             {dataMode === "daily" ? <label><span>每天检查时间（{APP_TIME_ZONE_LABEL}）</span><input type="time" value={runTime} onChange={(event) => setRunTime(event.target.value)} /><small>{APP_TIME_ZONE} · 仅 A 股交易日执行；09:35 默认使用上一根已完成日K。</small></label> : <label><span>交易时段检查间隔</span><select value={intervalMinutes} onChange={(event) => setIntervalMinutes(Number(event.target.value))}>{[1, 5, 15, 30, 60].map((value) => <option key={value} value={value}>每 {value} 分钟</option>)}</select><small>{APP_TIME_ZONE} · 仅交易日 09:30–11:30、13:00–15:00 检查。</small></label>}
@@ -241,7 +251,7 @@ export function TaskCenter({ open, watchlist, strategies, defaultStopLoss, defau
           </section>
           <section className="automation-list-wrap">
             <div className="automation-section-title"><div><span>SCHEDULE</span><h3>我的任务</h3></div><button onClick={refresh}>{loading ? "刷新中…" : "刷新"}</button></div>
-            <div className="automation-list">{items.length ? items.map((item) => <article className={!item.enabled ? "disabled" : ""} key={item.id}><header><div><i className={item.dataMode} /> <b>{item.name}</b></div><button className={`task-toggle ${item.enabled ? "on" : ""}`} onClick={() => patchTask(item, { enabled: !item.enabled })} aria-label={item.enabled ? "停用任务" : "启用任务"}><span /></button></header>{item.paperAccountName && <div className="task-linked-account">◎ {item.paperAccountName}</div>}<p><strong>{item.stockName}</strong><span>{item.symbol}</span><em>{item.strategyName} · v{item.strategyVersion} · {item.strategySnapshotHash.slice(0, 8)}</em></p><dl><div><dt>数据</dt><dd>{item.dataMode === "realtime" ? `实时 · ${item.intervalMinutes}分钟` : `日K · ${item.runTime}`} · {item.timezone}</dd></div><div><dt>最近运行</dt><dd className={`run-state ${item.lastStatus}`}>{item.lastStatus === "succeeded" ? "成功" : item.lastStatus === "failed" ? `失败 · ${item.lastError || "查看记录"}` : item.lastStatus === "retrying" ? "自动重试中" : "等待运行"}</dd></div><div><dt>通知渠道</dt><dd>{item.notificationChannelNames.length ? item.notificationChannelNames.join("、") : "未配置"}</dd></div><div><dt>最近通知</dt><dd>{item.lastNotifiedAt ? formatAppDateTime(item.lastNotifiedAt) : "尚未触发"}</dd></div></dl>{editingTaskChannels === item.id && <div className="task-card-channel-editor"><span>调整通知渠道</span><div>{enabledChannels.map((channel) => { const selected = taskChannelDraft.includes(channel.id); return <button className={selected ? "selected" : ""} key={channel.id} onClick={() => setTaskChannelDraft((current) => selected ? current.filter((id) => id !== channel.id) : [...current, channel.id])}>{selected ? "✓ " : ""}{channel.name}</button>; })}</div><footer><button onClick={() => setEditingTaskChannels(null)}>取消</button><button className="save" disabled={!taskChannelDraft.length} onClick={() => patchTask(item, { notificationChannelIds: taskChannelDraft })}>保存渠道</button></footer></div>}<footer><button onClick={() => runTask(item.id)}>立即检查</button><button onClick={() => { setEditingTaskChannels(item.id); setTaskChannelDraft(item.notificationChannelIds.filter((id) => enabledChannels.some((channel) => channel.id === id))); }}>设置渠道</button>{item.positionState === "holding" && !item.paperAccountId && <button onClick={() => patchTask(item, { resetPosition: true })}>重置为空仓</button>}<button className="danger" onClick={() => deleteTask(item)}>删除</button></footer></article>) : <div className="automation-empty"><i>◴</i><b>还没有定时任务</b><p>选择股票、策略和通知渠道后创建。</p></div>}</div>
+            <div className="automation-list">{items.length ? items.map((item) => <article className={!item.enabled ? "disabled" : ""} key={item.id}><header><div><i className={item.dataMode} /> <b>{item.name}</b></div><button className={`task-toggle ${item.enabled ? "on" : ""}`} onClick={() => patchTask(item, { enabled: !item.enabled })} aria-label={item.enabled ? "停用任务" : "启用任务"}><span /></button></header>{item.paperAccountName && <div className="task-linked-account">◎ {item.paperAccountName}</div>}<p><strong>{item.stockName}</strong><span>{item.symbol}</span><em>{item.strategies?.map((strategy) => strategy.name).join("、") || item.strategyName} · {item.strategies?.length || 1} 个策略</em></p><dl><div><dt>数据</dt><dd>{item.dataMode === "realtime" ? `实时 · ${item.intervalMinutes}分钟` : `日K · ${item.runTime}`} · {item.timezone}</dd></div><div><dt>最近运行</dt><dd className={`run-state ${item.lastStatus}`}>{item.lastStatus === "succeeded" ? "成功" : item.lastStatus === "failed" ? `失败 · ${item.lastError || "查看记录"}` : item.lastStatus === "retrying" ? "自动重试中" : "等待运行"}</dd></div><div><dt>通知渠道</dt><dd>{item.notificationChannelNames.length ? item.notificationChannelNames.join("、") : "未配置"}</dd></div><div><dt>最近通知</dt><dd>{item.lastNotifiedAt ? formatAppDateTime(item.lastNotifiedAt) : "尚未触发"}</dd></div></dl>{editingTaskChannels === item.id && <div className="task-card-channel-editor"><span>调整通知渠道</span><div>{enabledChannels.map((channel) => { const selected = taskChannelDraft.includes(channel.id); return <button className={selected ? "selected" : ""} key={channel.id} onClick={() => setTaskChannelDraft((current) => selected ? current.filter((id) => id !== channel.id) : [...current, channel.id])}>{selected ? "✓ " : ""}{channel.name}</button>; })}</div><footer><button onClick={() => setEditingTaskChannels(null)}>取消</button><button className="save" disabled={!taskChannelDraft.length} onClick={() => patchTask(item, { notificationChannelIds: taskChannelDraft })}>保存渠道</button></footer></div>}<footer><button onClick={() => runTask(item.id)}>立即检查</button><button onClick={() => { setEditingTaskChannels(item.id); setTaskChannelDraft(item.notificationChannelIds.filter((id) => enabledChannels.some((channel) => channel.id === id))); }}>设置渠道</button>{item.positionState === "holding" && !item.paperAccountId && <button onClick={() => patchTask(item, { resetPosition: true })}>重置为空仓</button>}<button className="danger" onClick={() => deleteTask(item)}>删除</button></footer></article>) : <div className="automation-empty"><i>◴</i><b>还没有定时任务</b><p>选择股票、策略和通知渠道后创建。</p></div>}</div>
           </section>
         </div>}
         {tab === "runs" && <div className="automation-run-history"><div className="automation-section-title"><div><span>EXECUTION LEDGER · ASIA/SHANGHAI</span><h3>任务运行记录</h3></div><button onClick={() => refreshRuns(false)}>{loading ? "刷新中…" : "刷新"}</button></div>{runs.length ? <div className="automation-run-list">{runs.map((run) => <article key={run.id}><time>{formatAppDateTime(run.createdAt)}</time><i className={run.status}>{run.status === "succeeded" ? "成功" : run.status === "failed" ? "失败" : run.status === "retrying" ? "重试" : run.status === "running" ? "运行" : run.status === "skipped" ? "跳过" : "排队"}</i><span><b>{run.automation?.name ?? "任务已删除"}</b><small>{run.automation ? `${run.automation.stockName} · ${run.automation.symbol}` : run.trigger === "manual" ? "手动触发" : "定时触发"}</small></span><p>{run.action ? `${run.action === "buy" ? "买入" : "卖出"}${run.price ? ` · ¥${run.price.toFixed(3)}` : ""} · ` : ""}{run.error || run.reason || "等待执行"}</p><em>{run.status === "retrying" ? `${run.attempt}/${run.maxAttempts} · ${run.nextRetryAt ? formatAppDateTime(run.nextRetryAt) : "待重试"}` : run.deliveryTotal ? `通知 ${run.deliverySucceeded}/${run.deliveryTotal}` : run.trigger === "manual" ? "手动" : "定时"}</em></article>)}</div> : <div className="automation-empty"><i>✓</i><b>暂无运行记录</b><p>任务定时触发或手动检查后会显示在这里。</p></div>}{runCursor && <button className="load-more-runs" disabled={loading} onClick={() => refreshRuns(true, runCursor)}>{loading ? "加载中…" : "加载更多"}</button>}</div>}

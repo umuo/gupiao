@@ -1,4 +1,5 @@
 import type { SavedStrategy, StrategyDraft } from "./strategy-model";
+import type { StrategySnapshot } from "./strategy-version";
 
 export type PaperAccountAutomation = {
   id: string;
@@ -26,6 +27,7 @@ export type PaperAccountView = {
   strategyDefinition: Pick<StrategyDraft, "entryLogic" | "exitLogic" | "entryRules" | "exitRules">;
   strategyVersion: number;
   strategySnapshotHash: string;
+  strategies: StrategySnapshot[];
   initialCapital: number;
   cash: number;
   realizedPnl: number;
@@ -81,7 +83,7 @@ export type PaperAccountTaskTarget = {
   name: string;
   symbol: string;
   stockName: string;
-  strategy: SavedStrategy;
+  strategies: SavedStrategy[];
   stopLoss: number;
   takeProfit: number;
   automation: PaperAccountAutomation | null;

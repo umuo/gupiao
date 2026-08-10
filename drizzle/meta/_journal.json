@@ -57,6 +57,13 @@
       "when": 1786266468590,
       "tag": "0007_cynical_miek",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1786327380455,
+      "tag": "0008_faithful_shard",
+      "breakpoints": true
     }
   ]
 }

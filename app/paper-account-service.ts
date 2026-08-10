@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { paperAccounts, paperEquitySnapshots, paperPositions, paperTrades } from "../db/schema";
 import type { SignalStrategy } from "./strategy-engine";
+import { parseStrategySnapshots } from "./strategy-version";
 import { appDateKey } from "./timezone";
 
 type PaperAccountRow = typeof paperAccounts.$inferSelect;
@@ -11,15 +12,14 @@ export function shanghaiDate(date = new Date()) {
   return appDateKey(date);
 }
 
-export function paperStrategyFrom(account: PaperAccountRow): SignalStrategy {
-  const parsed = JSON.parse(account.strategyDefinition) as Partial<SignalStrategy>;
-  if (!Array.isArray(parsed.entryRules) || !Array.isArray(parsed.exitRules)) throw new Error("模拟盘中的策略定义无效");
-  return {
-    entryLogic: parsed.entryLogic === "or" ? "or" : "and",
-    exitLogic: parsed.exitLogic === "and" ? "and" : "or",
-    entryRules: parsed.entryRules,
-    exitRules: parsed.exitRules,
-  };
+export function paperStrategiesFrom(account: PaperAccountRow): Array<SignalStrategy & { id: string; name: string }> {
+  return parseStrategySnapshots(account.strategySnapshots, {
+    id: account.strategyId,
+    name: account.strategyName,
+    definition: account.strategyDefinition,
+    version: account.strategyVersion,
+    contentHash: account.strategySnapshotHash,
+  });
 }
 
 export async function paperAccountState(id: string, userId: string) {
