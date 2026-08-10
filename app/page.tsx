@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AuthGate } from "./auth-gate";
 import { NotificationCenter } from "./notification-center";
 import { PaperAccountCenter } from "./paper-account-center";
@@ -24,6 +24,7 @@ type Strategy = SavedStrategy & {
   summary: string;
   color: string;
   builtin: boolean;
+  horizon: "short" | "medium" | "long" | "custom";
 };
 
 type Viewer = { userId: string; displayName: string; email: string; role: "user" | "superadmin" };
@@ -79,10 +80,12 @@ const initialWatchlist: WatchItem[] = [
 ];
 
 const builtinStrategies: Strategy[] = [
-  { id: "breakout", name: "趋势突破", description: "收盘价突破前20日高点且成交量确认时入场，跌破MA10时离场。", summary: "20 日新高 + 成交量确认", tag: "进取", color: "#ff5b6e", builtin: true, entryLogic: "and", exitLogic: "or", entryRules: [{ left: "close", operator: "gt", rightType: "indicator", rightIndicator: "highest20" }, { left: "volumeRatio20", operator: "gt", rightType: "value", rightValue: 1.1 }], exitRules: [{ left: "close", operator: "lt", rightType: "indicator", rightIndicator: "ma10" }] },
-  { id: "ma", name: "均线动量", description: "MA5向上穿越MA20时买入，向下穿越时卖出。", summary: "MA5 / MA20 金叉与死叉", tag: "均衡", color: "#4c8dff", builtin: true, entryLogic: "and", exitLogic: "or", entryRules: [{ left: "ma5", operator: "crossesAbove", rightType: "indicator", rightIndicator: "ma20" }], exitRules: [{ left: "ma5", operator: "crossesBelow", rightType: "indicator", rightIndicator: "ma20" }] },
-  { id: "lowvol", name: "低波趋势", description: "20日波动率低于1.8%且价格站上MA20时买入，趋势转弱或波动放大时离场。", summary: "低波动率 + 站上 MA20", tag: "稳健", color: "#37d6aa", builtin: true, entryLogic: "and", exitLogic: "or", entryRules: [{ left: "volatility20", operator: "lt", rightType: "value", rightValue: 1.8 }, { left: "close", operator: "gt", rightType: "indicator", rightIndicator: "ma20" }], exitRules: [{ left: "close", operator: "lt", rightType: "indicator", rightIndicator: "ma20" }, { left: "volatility20", operator: "gt", rightType: "value", rightValue: 3 }] },
-  { id: "rsi", name: "RSI 逆转", description: "RSI进入超卖区并出现阳线时尝试反弹交易，RSI修复至62以上时止盈。", summary: "超卖反弹 + RSI 离场", tag: "短线", color: "#b38cff", builtin: true, entryLogic: "and", exitLogic: "or", entryRules: [{ left: "rsi14", operator: "lt", rightType: "value", rightValue: 32 }, { left: "close", operator: "gt", rightType: "indicator", rightIndicator: "open" }], exitRules: [{ left: "rsi14", operator: "gt", rightType: "value", rightValue: 62 }] },
+  { id: "rsi", name: "RSI 超卖反弹", description: "RSI进入超卖区并出现阳线时尝试反弹交易，RSI修复至62以上时止盈。", summary: "超卖反弹 + RSI 离场", tag: "短线", color: "#b38cff", builtin: true, horizon: "short", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "rsi14", operator: "lt", rightType: "value", rightValue: 32 }, { left: "close", operator: "gt", rightType: "indicator", rightIndicator: "open" }], exitRules: [{ left: "rsi14", operator: "gt", rightType: "value", rightValue: 62 }] },
+  { id: "breakout", name: "放量突破", description: "收盘价突破前20日高点且成交量确认时入场，跌破MA10时离场。", summary: "20 日新高 + 成交量确认", tag: "短线", color: "#ff5b6e", builtin: true, horizon: "short", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "close", operator: "gt", rightType: "indicator", rightIndicator: "highest20" }, { left: "volumeRatio20", operator: "gt", rightType: "value", rightValue: 1.1 }], exitRules: [{ left: "close", operator: "lt", rightType: "indicator", rightIndicator: "ma10" }] },
+  { id: "ma", name: "均线动量", description: "MA5向上穿越MA20时买入，向下穿越时卖出。", summary: "MA5 / MA20 金叉与死叉", tag: "中期", color: "#4c8dff", builtin: true, horizon: "medium", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "ma5", operator: "crossesAbove", rightType: "indicator", rightIndicator: "ma20" }], exitRules: [{ left: "ma5", operator: "crossesBelow", rightType: "indicator", rightIndicator: "ma20" }] },
+  { id: "lowvol", name: "低波趋势", description: "20日波动率较低且价格站上MA20时买入，趋势转弱或波动放大时离场。", summary: "低波动率 + 站上 MA20", tag: "中期", color: "#37d6aa", builtin: true, horizon: "medium", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "volatility20", operator: "lt", rightType: "value", rightValue: 1.8 }, { left: "close", operator: "gt", rightType: "indicator", rightIndicator: "ma20" }], exitRules: [{ left: "close", operator: "lt", rightType: "indicator", rightIndicator: "ma20" }, { left: "volatility20", operator: "gt", rightType: "value", rightValue: 3 }] },
+  { id: "long-ma", name: "长线均线趋势", description: "MA10向上穿越MA30后跟随长期趋势，反向穿越时退出。", summary: "MA10 / MA30 长趋势", tag: "长线", color: "#f3c84b", builtin: true, horizon: "long", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "ma10", operator: "crossesAbove", rightType: "indicator", rightIndicator: "ma30" }], exitRules: [{ left: "ma10", operator: "crossesBelow", rightType: "indicator", rightIndicator: "ma30" }] },
+  { id: "long-defensive", name: "长线稳健持有", description: "价格在MA30上方且波动温和时持有，跌破长期均线或波动明显放大时离场。", summary: "MA30 + 长期低波动", tag: "长线", color: "#67c8ff", builtin: true, horizon: "long", entryLogic: "and", exitLogic: "or", entryRules: [{ left: "close", operator: "gt", rightType: "indicator", rightIndicator: "ma30" }, { left: "volatility20", operator: "lt", rightType: "value", rightValue: 2 }], exitRules: [{ left: "close", operator: "lt", rightType: "indicator", rightIndicator: "ma30" }, { left: "volatility20", operator: "gt", rightType: "value", rightValue: 3.2 }] },
 ];
 
 const dateFormatter = new Intl.DateTimeFormat("zh-CN", { timeZone: APP_TIME_ZONE, month: "2-digit", day: "2-digit" });
@@ -182,11 +185,48 @@ function runBacktest(bars: Kline[], strategy: Strategy, initialCapital: number, 
   };
 }
 
+type MovingAverageDefinition = { period: number; label: string; color: string };
+
+const defaultMovingAverages: MovingAverageDefinition[] = [
+  { period: 5, label: "MA5", color: "#f4c95d" },
+  { period: 10, label: "MA10", color: "#67c8ff" },
+  { period: 30, label: "MA30", color: "#b38cff" },
+];
+
+function movingAverageSeries(bars: Kline[], period: number) {
+  let sum = 0;
+  return bars.map((bar, index) => {
+    sum += bar.close;
+    if (index >= period) sum -= bars[index - period].close;
+    return index + 1 >= period ? sum / period : null;
+  });
+}
+
 function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const dragRef = useRef<{ pointerId: number; startX: number; startOffset: number; moved: boolean } | null>(null);
   const [hover, setHover] = useState<{ index: number; x: number; alignLeft: boolean } | null>(null);
+  const [visibleCount, setVisibleCount] = useState(() => Math.min(120, Math.max(1, bars.length)));
+  const [endOffset, setEndOffset] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [enabledPeriods, setEnabledPeriods] = useState<number[]>([5, 10, 30]);
+  const [customPeriod, setCustomPeriod] = useState(60);
+  const [customInput, setCustomInput] = useState("60");
+
+  const safeVisibleCount = Math.min(Math.max(1, visibleCount), Math.max(1, bars.length));
+  const maxEndOffset = Math.max(0, bars.length - safeVisibleCount);
+  const safeEndOffset = Math.min(endOffset, maxEndOffset);
+  const visibleEnd = Math.max(0, bars.length - safeEndOffset);
+  const visibleStart = Math.max(0, visibleEnd - safeVisibleCount);
+  const visibleBars = useMemo(() => bars.slice(visibleStart, visibleEnd), [bars, visibleEnd, visibleStart]);
+  const maDefinitions = useMemo(() => {
+    const definitions = [...defaultMovingAverages];
+    if (!definitions.some((item) => item.period === customPeriod)) definitions.push({ period: customPeriod, label: `MA${customPeriod}`, color: "#ff8ea1" });
+    return definitions;
+  }, [customPeriod]);
+  const maValues = useMemo(() => new Map(maDefinitions.map((item) => [item.period, movingAverageSeries(bars, item.period)])), [bars, maDefinitions]);
+  const enabledDefinitions = maDefinitions.filter((item) => enabledPeriods.includes(item.period));
   const hoverIndex = hover?.index ?? null;
-  const ma20Values = useMemo(() => bars.map((bar, index) => average(bars.slice(Math.max(0, index - 19), index + 1).map((item) => item.close))), [bars]);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -197,8 +237,8 @@ function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }
       if (!parent) return;
       const rect = parent.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.max(1, rect.width * dpr);
-      canvas.height = Math.max(1, rect.height * dpr);
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
       canvas.style.width = `${rect.width}px`;
       canvas.style.height = `${rect.height}px`;
       const ctx = canvas.getContext("2d");
@@ -208,33 +248,32 @@ function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }
       const height = rect.height;
       ctx.clearRect(0, 0, width, height);
 
-      if (!result.equityPercent.length || !bars.length) {
+      if (!visibleBars.length) {
         ctx.fillStyle = "#728098";
         ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
         ctx.textAlign = "center";
-        ctx.fillText("正在读取 TickFlow 真实历史日K…", width / 2, height / 2);
+        ctx.fillText("正在读取 TickFlow 上市以来日K…", width / 2, height / 2);
         return;
       }
 
-      const pad = { top: 30, right: 20, bottom: 30, left: 48 };
-      const chartW = width - pad.left - pad.right;
-      const chartH = height - pad.top - pad.bottom;
-      const priceValues = bars.map((bar) => bar.close);
-      const allValues = [...priceValues, ...ma20Values];
-      const rawMin = Math.min(...allValues);
-      const rawMax = Math.max(...allValues);
-      const spread = Math.max(rawMax * .02, rawMax - rawMin);
-      const min = rawMin - spread * 0.1;
-      const max = rawMax + spread * 0.1;
-      const point = (value: number, index: number) => ({
-        x: pad.left + index / Math.max(1, priceValues.length - 1) * chartW,
-        y: pad.top + (1 - (value - min) / (max - min)) * chartH,
-      });
+      const pad = { top: 24, right: 18, bottom: 28, left: 50 };
+      const chartW = Math.max(1, width - pad.left - pad.right);
+      const chartH = Math.max(1, height - pad.top - pad.bottom);
+      const visibleMaValues = enabledDefinitions.flatMap((definition) => (maValues.get(definition.period) ?? []).slice(visibleStart, visibleEnd).filter((value): value is number => value !== null));
+      const priceValues = visibleBars.flatMap((bar) => [bar.low, bar.high]);
+      const rawMin = Math.min(...priceValues, ...visibleMaValues);
+      const rawMax = Math.max(...priceValues, ...visibleMaValues);
+      const spread = Math.max(rawMax * .01, rawMax - rawMin, .01);
+      const min = rawMin - spread * .08;
+      const max = rawMax + spread * .08;
+      const slot = chartW / visibleBars.length;
+      const xForLocalIndex = (index: number) => pad.left + (index + .5) * slot;
+      const yForValue = (value: number) => pad.top + (1 - (value - min) / (max - min)) * chartH;
 
       ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
-      for (let i = 0; i <= 4; i += 1) {
-        const y = pad.top + chartH / 4 * i;
-        const value = max - (max - min) / 4 * i;
+      for (let index = 0; index <= 4; index += 1) {
+        const y = pad.top + chartH / 4 * index;
+        const value = max - (max - min) / 4 * index;
         ctx.strokeStyle = "rgba(126, 143, 172, .12)";
         ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
@@ -244,125 +283,154 @@ function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }
       }
       ctx.fillStyle = "#7b899f";
       ctx.textAlign = "left";
-      ctx.fillText("元", 8, pad.top - 10);
+      ctx.fillText("元", 8, pad.top - 7);
 
-      for (let i = 0; i <= 6; i += 1) {
-        const x = pad.left + chartW / 6 * i;
-        ctx.strokeStyle = "rgba(126, 143, 172, .09)";
-        ctx.lineWidth = 1;
+      for (let index = 0; index <= 6; index += 1) {
+        const x = pad.left + chartW / 6 * index;
+        ctx.strokeStyle = "rgba(126, 143, 172, .08)";
         ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, height - pad.bottom); ctx.stroke();
       }
 
-      ctx.setLineDash([]);
-      ctx.strokeStyle = "rgba(247, 203, 75, .82)";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ma20Values.forEach((value, index) => {
-        const p = point(value, index);
-        if (index === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
+      const candleWidth = Math.max(1, Math.min(12, slot * .66));
+      visibleBars.forEach((bar, localIndex) => {
+        const x = xForLocalIndex(localIndex);
+        const up = bar.close >= bar.open;
+        const color = up ? "#ff5b6e" : "#37d6aa";
+        const openY = yForValue(bar.open);
+        const closeY = yForValue(bar.close);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1, Math.min(1.5, candleWidth / 5));
+        ctx.beginPath(); ctx.moveTo(x, yForValue(bar.high)); ctx.lineTo(x, yForValue(bar.low)); ctx.stroke();
+        const bodyTop = Math.min(openY, closeY);
+        const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+        ctx.fillStyle = up ? `${color}dd` : `${color}c2`;
+        ctx.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
       });
-      ctx.stroke();
 
-      const gradient = ctx.createLinearGradient(0, pad.top, 0, height - pad.bottom);
-      gradient.addColorStop(0, "rgba(131, 196, 255, .24)");
-      gradient.addColorStop(.7, "rgba(73, 137, 211, .06)");
-      gradient.addColorStop(1, "rgba(73, 137, 211, 0)");
-      ctx.beginPath();
-      priceValues.forEach((value, index) => {
-        const p = point(value, index);
-        if (index === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
+      enabledDefinitions.forEach((definition) => {
+        const values = maValues.get(definition.period) ?? [];
+        ctx.save();
+        ctx.strokeStyle = definition.color;
+        ctx.lineWidth = 1.5;
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        let started = false;
+        for (let globalIndex = visibleStart; globalIndex < visibleEnd; globalIndex += 1) {
+          const value = values[globalIndex];
+          if (value === null || value === undefined) { started = false; continue; }
+          const x = xForLocalIndex(globalIndex - visibleStart);
+          const y = yForValue(value);
+          if (!started) { ctx.moveTo(x, y); started = true; }
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.restore();
       });
-      ctx.lineTo(width - pad.right, height - pad.bottom);
-      ctx.lineTo(pad.left, height - pad.bottom);
-      ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
 
-      ctx.save();
-      ctx.strokeStyle = "#f4f8ff";
-      ctx.lineWidth = 3;
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-      ctx.shadowColor = "rgba(142, 202, 255, .72)";
-      ctx.shadowBlur = 9;
-      ctx.beginPath();
-      priceValues.forEach((value, index) => {
-        const p = point(value, index);
-        if (index === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-      });
-      ctx.stroke();
-      ctx.restore();
-
-      const finalPoint = point(priceValues.at(-1) ?? 0, priceValues.length - 1);
-      ctx.beginPath(); ctx.arc(finalPoint.x, finalPoint.y, 4, 0, Math.PI * 2); ctx.fillStyle = "#ffffff"; ctx.fill();
-      ctx.beginPath(); ctx.arc(finalPoint.x, finalPoint.y, 7, 0, Math.PI * 2); ctx.strokeStyle = "rgba(142, 202, 255, .5)"; ctx.lineWidth = 3; ctx.stroke();
-
-      result.trades.forEach((trade) => {
-        const p = point(bars[trade.index]?.close ?? trade.price, trade.index);
+      result.trades.filter((trade) => trade.index >= visibleStart && trade.index < visibleEnd).forEach((trade) => {
+        const localIndex = trade.index - visibleStart;
+        const bar = bars[trade.index];
+        const x = xForLocalIndex(localIndex);
+        const y = yForValue(bar?.close ?? trade.price);
         const isBuy = trade.action === "buy";
         const color = isBuy ? "#ff5b6e" : "#37d6aa";
-        const iconY = Math.max(pad.top + 10, Math.min(height - pad.bottom - 10, p.y + (isBuy ? 20 : -20)));
+        const iconY = Math.max(pad.top + 9, Math.min(height - pad.bottom - 9, y + (isBuy ? 19 : -19)));
         ctx.strokeStyle = `${color}95`; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x, iconY); ctx.stroke();
-        ctx.beginPath(); ctx.arc(p.x, iconY, 8.5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
-        ctx.beginPath();
-        if (isBuy) {
-          ctx.moveTo(p.x, iconY - 4.2); ctx.lineTo(p.x - 4, iconY + 2.8); ctx.lineTo(p.x + 4, iconY + 2.8);
-        } else {
-          ctx.moveTo(p.x, iconY + 4.2); ctx.lineTo(p.x - 4, iconY - 2.8); ctx.lineTo(p.x + 4, iconY - 2.8);
-        }
-        ctx.closePath(); ctx.fillStyle = "#071018"; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, iconY); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, iconY, 7.5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+        ctx.fillStyle = "#071018"; ctx.font = "bold 8px ui-monospace, monospace"; ctx.textAlign = "center";
+        ctx.fillText(isBuy ? "B" : "S", x, iconY + 3);
       });
 
-      if (hoverIndex !== null) {
-        const index = Math.min(hoverIndex, priceValues.length - 1);
-        const closePoint = point(priceValues[index], index);
-        const ma20Point = point(ma20Values[index], index);
+      if (hoverIndex !== null && hoverIndex >= visibleStart && hoverIndex < visibleEnd) {
+        const localIndex = hoverIndex - visibleStart;
+        const bar = bars[hoverIndex];
+        const x = xForLocalIndex(localIndex);
+        const y = yForValue(bar.close);
         ctx.save();
         ctx.setLineDash([4, 4]);
-        ctx.strokeStyle = "rgba(174, 193, 222, .48)";
+        ctx.strokeStyle = "rgba(174, 193, 222, .5)";
         ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(closePoint.x, pad.top); ctx.lineTo(closePoint.x, height - pad.bottom); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, height - pad.bottom); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
         ctx.setLineDash([]);
-        ctx.beginPath(); ctx.arc(closePoint.x, closePoint.y, 4.5, 0, Math.PI * 2); ctx.fillStyle = "#f4f8ff"; ctx.fill();
-        ctx.beginPath(); ctx.arc(closePoint.x, closePoint.y, 7, 0, Math.PI * 2); ctx.strokeStyle = "rgba(142, 202, 255, .55)"; ctx.lineWidth = 2; ctx.stroke();
-        ctx.beginPath(); ctx.arc(ma20Point.x, ma20Point.y, 4, 0, Math.PI * 2); ctx.fillStyle = "#f3c84b"; ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fillStyle = "#f4f8ff"; ctx.fill();
         ctx.restore();
       }
 
-      const labelIndexes = [0, .25, .5, .75, 1].map((ratio) => Math.round((bars.length - 1) * ratio));
+      const labelIndexes = [0, .25, .5, .75, 1].map((ratio) => Math.min(visibleBars.length - 1, Math.round((visibleBars.length - 1) * ratio)));
       ctx.fillStyle = "#62708a"; ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace"; ctx.textAlign = "center";
-      labelIndexes.forEach((index) => ctx.fillText(dateFormatter.format(bars[index].timestamp), point(priceValues[index], index).x, height - 8));
+      labelIndexes.forEach((localIndex) => ctx.fillText(dateFormatter.format(visibleBars[localIndex].timestamp), xForLocalIndex(localIndex), height - 7));
     };
 
     draw();
     const observer = new ResizeObserver(draw);
     if (canvas.parentElement) observer.observe(canvas.parentElement);
     return () => observer.disconnect();
-  }, [result, bars, hoverIndex, ma20Values]);
+  }, [bars, enabledDefinitions, hoverIndex, maValues, result.trades, visibleBars, visibleEnd, visibleStart]);
 
   const hoverForIndex = (index: number, width: number) => {
-    const x = 48 + index / Math.max(1, bars.length - 1) * Math.max(1, width - 68);
+    const localIndex = index - visibleStart;
+    const x = 50 + (localIndex + .5) / Math.max(1, safeVisibleCount) * Math.max(1, width - 68);
     return { index, x, alignLeft: x > width * .62 };
   };
 
-  const hoverFromPointer = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    const canvas = ref.current;
-    if (!canvas || !bars.length || !result.equityPercent.length) return null;
-    const rect = canvas.getBoundingClientRect();
-    const pad = { top: 30, right: 20, bottom: 30, left: 48 };
+  const indexFromPointer = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
-    if (x < pad.left || x > rect.width - pad.right || y < pad.top || y > rect.height - pad.bottom) return null;
-    const ratio = (x - pad.left) / Math.max(1, rect.width - pad.left - pad.right);
-    const index = Math.max(0, Math.min(bars.length - 1, Math.round(ratio * (bars.length - 1))));
-    return hoverForIndex(index, rect.width);
+    if (!visibleBars.length || x < 50 || x > rect.width - 18 || y < 24 || y > rect.height - 28) return null;
+    const localIndex = Math.max(0, Math.min(visibleBars.length - 1, Math.floor((x - 50) / Math.max(1, rect.width - 68) * visibleBars.length)));
+    return hoverForIndex(visibleStart + localIndex, rect.width);
+  };
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startOffset: safeEndOffset, moved: false };
+    setHover(indexFromPointer(event));
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    const next = hoverFromPointer(event);
+    const drag = dragRef.current;
+    if (drag?.pointerId === event.pointerId) {
+      const deltaX = event.clientX - drag.startX;
+      if (Math.abs(deltaX) > 3) {
+        drag.moved = true;
+        setDragging(true);
+        const rect = event.currentTarget.getBoundingClientRect();
+        const barsDelta = Math.round(deltaX / Math.max(3, (rect.width - 68) / safeVisibleCount));
+        setEndOffset(Math.max(0, Math.min(maxEndOffset, drag.startOffset + barsDelta)));
+        setHover(null);
+        return;
+      }
+    }
+    const next = indexFromPointer(event);
     setHover((current) => current?.index === next?.index && current?.x === next?.x ? current : next);
+  };
+
+  const handlePointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    if (!dragRef.current.moved) setHover(indexFromPointer(event));
+    dragRef.current = null;
+    setDragging(false);
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const applyZoom = (nextCount: number, anchorRatio = .5) => {
+    const next = Math.max(Math.min(30, bars.length), Math.min(bars.length, Math.round(nextCount)));
+    if (!bars.length || next === safeVisibleCount) return;
+    const anchorIndex = visibleStart + Math.floor(safeVisibleCount * anchorRatio);
+    const nextStart = Math.max(0, Math.min(bars.length - next, anchorIndex - Math.floor(next * anchorRatio)));
+    setVisibleCount(next);
+    setEndOffset(Math.max(0, bars.length - nextStart - next));
+    setHover(null);
+  };
+
+  const handleWheel = (event: ReactWheelEvent<HTMLCanvasElement>) => {
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const anchorRatio = Math.max(0, Math.min(1, (event.clientX - rect.left - 50) / Math.max(1, rect.width - 68)));
+    applyZoom(safeVisibleCount * (event.deltaY > 0 ? 1.18 : .84), anchorRatio);
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
@@ -371,31 +439,57 @@ function EquityChart({ result, bars }: { result: BacktestResult; bars: Kline[] }
     const direction = event.key === "ArrowRight" ? 1 : -1;
     const width = event.currentTarget.getBoundingClientRect().width;
     setHover((current) => {
-      const index = Math.max(0, Math.min(bars.length - 1, (current?.index ?? bars.length - 1) + direction));
+      const index = Math.max(visibleStart, Math.min(visibleEnd - 1, (current?.index ?? visibleEnd - 1) + direction));
       return hoverForIndex(index, width);
     });
   };
 
+  const togglePeriod = (period: number) => setEnabledPeriods((periods) => periods.includes(period) ? periods.filter((item) => item !== period) : [...periods, period]);
+  const applyCustomPeriod = () => {
+    const next = Math.max(2, Math.min(250, Math.round(Number(customInput) || customPeriod)));
+    setCustomPeriod(next);
+    setCustomInput(String(next));
+    setEnabledPeriods((periods) => periods.includes(next) ? periods : [...periods, next]);
+  };
   const activeIndex = hoverIndex !== null && bars[hoverIndex] ? hoverIndex : null;
+  const maxStart = Math.max(0, bars.length - safeVisibleCount);
 
-  return <>
-    <canvas
-      ref={ref}
-      aria-label="真实历史日K收盘价与MA20均线；可点击、触摸、使用鼠标或左右方向键查看具体价格"
-      onBlur={() => setHover(null)}
-      onFocus={(event) => { if (bars.length) setHover(hoverForIndex(bars.length - 1, event.currentTarget.getBoundingClientRect().width)); }}
-      onKeyDown={handleKeyDown}
-      onPointerDown={handlePointerMove}
-      onPointerLeave={() => setHover(null)}
-      onPointerMove={handlePointerMove}
-      tabIndex={0}
-    />
-    {activeIndex !== null && hover && <div className={`chart-tooltip ${hover.alignLeft ? "align-left" : ""}`} style={{ left: hover.x }} role="status">
-      <time>{fullDateFormatter.format(bars[activeIndex].timestamp)}</time>
-      <div><i className="close-dot" /><span>收盘价</span><b>¥ {bars[activeIndex].close.toFixed(2)}</b></div>
-      <div><i className="ma20-dot" /><span>MA20</span><b>¥ {ma20Values[activeIndex].toFixed(3)}</b></div>
-    </div>}
-  </>;
+  return <div className="kline-chart">
+    <div className="chart-indicator-toolbar">
+      <div className="ma-switches" role="group" aria-label="移动平均线">
+        {defaultMovingAverages.map((definition) => <button key={definition.period} className={enabledPeriods.includes(definition.period) ? "active" : ""} onClick={() => togglePeriod(definition.period)} style={{ "--ma-color": definition.color } as CSSProperties}><i />{definition.label}</button>)}
+      </div>
+      <label className="custom-ma"><span>自定义 MA</span><input type="number" min="2" max="250" value={customInput} onChange={(event) => setCustomInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") applyCustomPeriod(); }} aria-label="自定义均线周期" /><button onClick={applyCustomPeriod}>应用</button></label>
+      <div className="chart-zoom" aria-label="图表缩放"><button onClick={() => applyZoom(safeVisibleCount * 1.25)} aria-label="缩小图表">−</button><button onClick={() => applyZoom(safeVisibleCount * .8)} aria-label="放大图表">＋</button><button onClick={() => { setEndOffset(0); setHover(null); }}>最新</button></div>
+    </div>
+    <div className={`chart-viewport ${dragging ? "dragging" : ""}`}>
+      <canvas
+        ref={ref}
+        aria-label="上市以来真实日K蜡烛图，包含MA5、MA10、MA30和自定义均线；可拖动浏览、滚轮缩放、使用左右方向键查看具体价格"
+        onBlur={() => setHover(null)}
+        onFocus={(event) => { if (visibleBars.length) setHover(hoverForIndex(visibleEnd - 1, event.currentTarget.getBoundingClientRect().width)); }}
+        onKeyDown={handleKeyDown}
+        onPointerCancel={handlePointerUp}
+        onPointerDown={handlePointerDown}
+        onPointerLeave={() => { if (!dragRef.current) setHover(null); }}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onWheel={handleWheel}
+        tabIndex={0}
+      />
+      {activeIndex !== null && hover && <div className={`chart-tooltip ${hover.alignLeft ? "align-left" : ""}`} style={{ left: hover.x }} role="status">
+        <time>{fullDateFormatter.format(bars[activeIndex].timestamp)}</time>
+        <div><i className="close-dot" /><span>开 / 高 / 低 / 收</span><b>{bars[activeIndex].open.toFixed(2)} / {bars[activeIndex].high.toFixed(2)} / {bars[activeIndex].low.toFixed(2)} / {bars[activeIndex].close.toFixed(2)}</b></div>
+        {enabledDefinitions.map((definition) => <div key={definition.period}><i style={{ background: definition.color }} /><span>{definition.label}</span><b>{maValues.get(definition.period)?.[activeIndex]?.toFixed(3) ?? "—"}</b></div>)}
+      </div>}
+    </div>
+    <div className="chart-navigator">
+      <span>{visibleBars[0] ? fullDateFormatter.format(visibleBars[0].timestamp) : "—"}</span>
+      <input type="range" min="0" max={maxStart} value={Math.min(visibleStart, maxStart)} onChange={(event) => setEndOffset(Math.max(0, bars.length - Number(event.target.value) - safeVisibleCount))} disabled={!maxStart} aria-label="拖动浏览历史K线" />
+      <span>{visibleBars.at(-1) ? fullDateFormatter.format(visibleBars.at(-1)!.timestamp) : "—"}</span>
+      <small>{safeVisibleCount} / {bars.length} 根</small>
+    </div>
+  </div>;
 }
 
 function Metric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "up" | "down" }) {
@@ -435,13 +529,21 @@ export default function Home() {
   const [initialCapital, setInitialCapital] = useState(1_000_000);
   const [capitalInput, setCapitalInput] = useState("1000000");
   const [series, setSeries] = useState<Record<string, Kline[]>>({});
+  const [historySeries, setHistorySeries] = useState<Record<string, Kline[]>>({});
   const [dataStatus, setDataStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [historyStatus, setHistoryStatus] = useState<"loading" | "ready" | "error">("loading");
   const [refreshTick, setRefreshTick] = useState(0);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(100);
   const [runCount, setRunCount] = useState(12);
   const [toast, setToast] = useState("");
   const allStrategies = useMemo(() => [...builtinStrategies, ...customStrategies], [customStrategies]);
+  const strategyGroups = useMemo(() => [
+    { id: "short", label: "短线策略", note: "约 1—20 个交易日", items: allStrategies.filter((strategy) => strategy.horizon === "short") },
+    { id: "medium", label: "中期策略", note: "约 1—6 个月", items: allStrategies.filter((strategy) => strategy.horizon === "medium") },
+    { id: "long", label: "长线策略", note: "6 个月以上", items: allStrategies.filter((strategy) => strategy.horizon === "long") },
+    { id: "custom", label: "我的策略", note: "自定义规则", items: allStrategies.filter((strategy) => strategy.horizon === "custom") },
+  ].filter((group) => group.items.length), [allStrategies]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("paper-alpha-watchlist-v2");
@@ -462,7 +564,7 @@ export default function Home() {
     const [strategyResponse, settingsResponse] = await Promise.all([fetch("/api/strategies"), fetch("/api/settings")]);
     if (strategyResponse.ok) {
       const strategyPayload = await strategyResponse.json() as { strategies: SavedStrategy[] };
-      setCustomStrategies(strategyPayload.strategies.map((strategy) => ({ ...strategy, summary: strategyRuleSummary(strategy.entryRules, strategy.entryLogic), color: "#f4c95d", builtin: false })));
+      setCustomStrategies(strategyPayload.strategies.map((strategy) => ({ ...strategy, summary: strategyRuleSummary(strategy.entryRules, strategy.entryLogic), color: "#f4c95d", builtin: false, horizon: "custom" })));
     }
     if (settingsResponse.ok) {
       const settingsPayload = await settingsResponse.json() as { settings: { aiBaseUrl: string; aiModel: string } };
@@ -527,6 +629,32 @@ export default function Home() {
     return () => controller.abort();
   }, [watchlistCodes, refreshTick]);
 
+  const selectedSymbol = toSymbol(selectedStock || "601939");
+  useEffect(() => {
+    if (!selectedStock) return;
+    const controller = new AbortController();
+    // A symbol change starts a new external history request immediately.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHistoryStatus("loading");
+    fetch(`/api/tickflow?symbols=${encodeURIComponent(selectedSymbol)}&count=10000`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("TickFlow full history request failed");
+        return response.json() as Promise<{ data: Record<string, Kline[]> }>;
+      })
+      .then((payload) => {
+        const bars = payload.data[selectedSymbol] ?? [];
+        if (!bars.length) throw new Error("TickFlow returned no full history");
+        setHistorySeries((current) => ({ ...current, [selectedSymbol]: bars }));
+        setHistoryStatus("ready");
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setHistoryStatus("error");
+        setToast("完整历史暂时无法读取，已回退到近期日K");
+      });
+    return () => controller.abort();
+  }, [selectedStock, selectedSymbol, refreshTick]);
+
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(""), 2600);
@@ -587,12 +715,16 @@ export default function Home() {
     };
   }, [search, showSearch, watchlist]);
 
-  const selectedSymbol = toSymbol(selectedStock || "601939");
-  const allBars = useMemo(() => series[selectedSymbol] ?? [], [selectedSymbol, series]);
+  const allBars = useMemo(() => historySeries[selectedSymbol] ?? series[selectedSymbol] ?? [], [historySeries, selectedSymbol, series]);
   const periodBars = useMemo(() => {
     if (!allBars.length) return [];
-    const sizes: Record<string, number> = { "近1月": 42, "近3月": 84, "近6月": 150, "今年": 240 };
-    return allBars.slice(-Math.min(allBars.length, sizes[period] ?? 150));
+    if (period === "全部") return allBars;
+    if (period === "今年") {
+      const currentYear = new Date().getFullYear();
+      return allBars.filter((bar) => new Date(bar.timestamp).getFullYear() === currentYear);
+    }
+    const sizes: Record<string, number> = { "近1月": 22, "近3月": 66, "近6月": 132 };
+    return allBars.slice(-Math.min(allBars.length, sizes[period] ?? 132));
   }, [allBars, period]);
   const backtest = useMemo(() => runBacktest(periodBars, selectedStrategy, initialCapital, position, stopLoss, takeProfit), [periodBars, selectedStrategy, initialCapital, position, stopLoss, takeProfit]);
   const selectedItem = watchlist.find((item) => item.code === selectedStock) ?? watchlist[0];
@@ -621,7 +753,7 @@ export default function Home() {
   };
 
   const handleStrategyCreated = (saved: SavedStrategy) => {
-    const strategy: Strategy = { ...saved, summary: strategyRuleSummary(saved.entryRules, saved.entryLogic), color: "#f4c95d", builtin: false };
+    const strategy: Strategy = { ...saved, summary: strategyRuleSummary(saved.entryRules, saved.entryLogic), color: "#f4c95d", builtin: false, horizon: "custom" };
     setCustomStrategies((items) => [strategy, ...items]);
     setSelectedStrategy(strategy);
     setStudioMode(null);
@@ -684,11 +816,11 @@ export default function Home() {
           <div className="panel-heading"><div><span className="eyebrow">WATCHLIST</span><h2>自选股 <small>{watchlist.length}</small></h2></div><button className="add-button" onClick={() => setShowSearch((value) => !value)} aria-expanded={showSearch}>＋</button></div>
           {showSearch && <div className="stock-search"><label htmlFor="stock-search">联网搜索 A 股</label><div className="search-input-wrap"><input id="stock-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="输入股票代码或名称" /><i className={searchStatus === "loading" ? "search-spinner" : "search-cloud"}>{searchStatus === "loading" ? "" : "⌁"}</i></div><div className="search-results">{searchResults.map((stock) => <button key={stock.symbol} onClick={() => addStock(stock)}><span>{stock.name}<small>{stock.symbol}</small></span><b>＋</b></button>)}{searchStatus === "idle" && <p>输入关键词后通过 TickFlow 联网查询</p>}{searchStatus === "loading" && <p>正在联网搜索…</p>}{searchStatus === "ready" && searchResults.length === 0 && <p>没有找到匹配的 A 股</p>}{searchStatus === "error" && <p className="search-error">联网搜索暂时不可用，请重试</p>}</div></div>}
           <div className="watch-list">{watchlist.map((stock) => <button key={stock.code} className={`watch-row ${selectedStock === stock.code ? "active" : ""}`} onClick={() => setSelectedStock(stock.code)}><span className="stock-identity"><b>{stock.name}</b><small>{toSymbol(stock.code)}</small></span><span className="stock-quote"><b>{stock.price ? stock.price.toFixed(2) : "—"}</b><small className={stock.change >= 0 ? "up" : "down"}>{stock.price ? `${stock.change >= 0 ? "+" : ""}${stock.change.toFixed(2)}%` : "读取中"}</small></span><span className={`signal signal-${stock.signal}`}>{stock.signal}</span><span className="remove-stock" role="button" tabIndex={0} aria-label={`移除${stock.name}`} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); removeStock(stock.code); } }} onClick={(event) => { event.stopPropagation(); removeStock(stock.code); }}>×</span></button>)}</div>
-          <div className="watch-footer"><div><span>数据源</span><b>TickFlow</b></div><div><span>历史日K</span><b>{allBars.length || "—"} 根</b></div><button onClick={() => setRefreshTick((value) => value + 1)}>↻ 同步最新日K</button></div>
+          <div className="watch-footer"><div><span>数据源</span><b>TickFlow</b></div><div><span>上市以来</span><b>{historyStatus === "loading" ? "读取中" : `${allBars.length || "—"} 根`}</b></div><button onClick={() => setRefreshTick((value) => value + 1)}>↻ 同步完整历史</button></div>
         </aside>
 
         <section className="main-column">
-          <section className="hero panel"><div className="hero-copy"><div className="eyebrow"><i className="pulse-dot" /> REAL DATA BACKTEST</div><h1>真实日K策略驾驶舱</h1><p>使用 TickFlow 免费历史日线计算策略信号、虚拟成交与资金曲线。</p></div><div className="hero-meta"><div><span>当前策略</span><b>{selectedStrategy.name}</b></div><div><span>数据状态</span><b className={dataStatus === "ready" ? "active-status" : ""}>{dataStatus === "ready" ? "● 已同步" : dataStatus === "loading" ? "◌ 同步中" : "× 异常"}</b></div><div><span>计算频率</span><b>日线 · 收盘后</b></div></div></section>
+          <section className="hero panel"><div className="hero-copy"><div className="eyebrow"><i className="pulse-dot" /> REAL DATA BACKTEST</div><h1>真实日K策略驾驶舱</h1><p>使用 TickFlow 上市以来的前复权日线计算策略信号、虚拟成交与资金曲线。</p></div><div className="hero-meta"><div><span>当前策略</span><b>{selectedStrategy.name}</b></div><div><span>历史数据</span><b className={historyStatus === "ready" ? "active-status" : ""}>{historyStatus === "ready" ? `● ${allBars.length} 根` : historyStatus === "loading" ? "◌ 全量读取中" : "× 已回退"}</b></div><div><span>计算频率</span><b>日线 · 收盘后</b></div></div></section>
 
           <section className="metrics-grid" aria-label="真实日K回测绩效">
             <Metric label="回测总资产" value={backtest.equityValues.length ? `¥ ${Math.round(backtest.finalEquity).toLocaleString("zh-CN")}` : "—"} />
@@ -698,8 +830,8 @@ export default function Home() {
           </section>
 
           <section className="chart-panel panel">
-            <div className="chart-header"><div><span className="eyebrow">TICKFLOW DAILY PRICE</span><h2>{selectedItem?.name ?? "建设银行"}日K收盘价</h2></div><div className="legend"><span className="strategy-line" />收盘价 <span className="benchmark-line" />MA20 <span className="trade-legend"><i className="legend-buy" />买入</span><span className="trade-legend"><i className="legend-sell" />卖出</span></div><div className="periods" role="group" aria-label="回测时间范围">{["近1月", "近3月", "近6月", "今年"].map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div></div>
-            <div className="chart-canvas"><EquityChart result={backtest} bars={periodBars} /></div>
+            <div className="chart-header"><div><span className="eyebrow">TICKFLOW DAILY KLINE</span><h2>{selectedItem?.name ?? "建设银行"}日K蜡烛图</h2></div><div className="legend"><span className="candle-up" />上涨 <span className="candle-down" />下跌 <span className="trade-legend"><i className="legend-buy" />买入</span><span className="trade-legend"><i className="legend-sell" />卖出</span></div><div className="periods" role="group" aria-label="回测时间范围">{["近1月", "近3月", "近6月", "今年", "全部"].map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div></div>
+            <div className="chart-canvas"><EquityChart key={`${selectedSymbol}-${period}-${periodBars.length}`} result={backtest} bars={periodBars} /></div>
             <div className="chart-summary"><div><span>回测本金</span><b>¥ {initialCapital.toLocaleString("zh-CN")}</b></div><div><span>年化收益</span><b className={backtest.annualReturn >= 0 ? "up" : "down"}>{backtest.equityValues.length ? formatPercent(backtest.annualReturn) : "—"}</b></div><div><span>胜率</span><b>{backtest.equityValues.length ? formatPercent(backtest.winRate, false) : "—"}</b></div><div><span>真实日K交易</span><b>{backtest.trades.length} 笔</b></div></div>
           </section>
 
@@ -709,7 +841,7 @@ export default function Home() {
         <aside className="control-column">
           <section className="strategy-panel panel">
             <div className="panel-heading compact"><div><span className="eyebrow">STRATEGY</span><h2>策略引擎 <small>{allStrategies.length}</small></h2></div><div className="strategy-tools"><button onClick={() => setStudioMode("docs")}>文档</button><button className="ai-tool" onClick={() => setStudioMode("ai")}>✦ AI</button><button className="new-tool" onClick={() => setStudioMode("manual")} aria-label="新建策略">＋</button></div></div>
-            <div className="strategy-list">{allStrategies.map((strategy) => <button key={strategy.id} className={`strategy-card ${selectedStrategy.id === strategy.id ? "active" : ""}`} onClick={() => setSelectedStrategy(strategy)} style={{ "--strategy-color": strategy.color } as CSSProperties}><span className="strategy-radio"><i /></span><span><b>{strategy.name}{!strategy.builtin && <sup>我的</sup>}</b><small>{strategy.summary}</small></span><em>{strategy.tag}</em></button>)}</div>
+            <div className="strategy-list">{strategyGroups.map((group) => <section className="strategy-group" key={group.id}><header><b>{group.label}</b><span>{group.note}</span></header>{group.items.map((strategy) => <button key={strategy.id} className={`strategy-card ${selectedStrategy.id === strategy.id ? "active" : ""}`} onClick={() => setSelectedStrategy(strategy)} style={{ "--strategy-color": strategy.color } as CSSProperties}><span className="strategy-radio"><i /></span><span><b>{strategy.name}{!strategy.builtin && <sup>我的</sup>}</b><small>{strategy.summary}</small></span><em>{strategy.tag}</em></button>)}</section>)}</div>
             <div className="capital-config"><div className="section-label"><b>临时回测资金</b><span>不会保存为模拟盘</span></div><label htmlFor="initial-capital">回测本金</label><div className="capital-input"><i>¥</i><input id="initial-capital" type="text" value={capitalInput} onChange={(event) => editCapital(event.target.value)} onBlur={commitCapital} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} aria-describedby="capital-hint" /></div><small id="capital-hint" className="capital-hint">可输入 20000、2w 或 2万，按回车应用</small><div className="capital-presets">{[20_000, 100_000, 500_000, 1_000_000].map((amount) => <button key={amount} className={initialCapital === amount ? "active" : ""} onClick={() => { setInitialCapital(amount); setCapitalInput(String(amount)); }}>{amount / 10_000}万</button>)}</div></div>
             <div className="parameters"><div className="section-label"><b>执行参数</b><button onClick={() => { setPosition(30); setStopLoss(8); setTakeProfit(22); }}>恢复默认</button></div><label><span>单票仓位 <b>{position}%</b></span><input type="range" min="10" max="100" step="5" value={position} onChange={(event) => setPosition(Number(event.target.value))} /></label><div className="parameter-pair"><label><span>止损线</span><div><input type="number" min="1" max="20" value={stopLoss} onChange={(event) => setStopLoss(Number(event.target.value))} /><i>%</i></div></label><label><span>止盈线</span><div><input type="number" min="5" max="50" value={takeProfit} onChange={(event) => setTakeProfit(Number(event.target.value))} /><i>%</i></div></label></div><button className={`toggle-row ${autoRebalance ? "on" : ""}`} onClick={() => setAutoRebalance((value) => !value)} aria-pressed={autoRebalance}><span><b>收盘后自动调仓</b><small>新日K到达后检查信号</small></span><i><em /></i></button></div>
             <div className="execution-flow"><div className="section-label"><b>数据与执行流程</b><span>{dataStatus === "ready" ? "4 / 4 就绪" : "同步中"}</span></div><ol><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "1"}</i><span><b>读取 TickFlow 日K</b><small>{allBars.length || "—"} 根 · 前复权 · 真实历史数据</small></span></li><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "2"}</i><span><b>计算策略信号</b><small>{selectedStrategy.name} · 仅使用OHLCV</small></span></li><li className={dataStatus === "ready" ? "done" : "ready"}><i>{dataStatus === "ready" ? "✓" : "3"}</i><span><b>风控检查</b><small>仓位 / 止损 / 止盈</small></span></li><li className="ready"><i>4</i><span><b>虚拟撮合</b><small>佣金 0.025% · 滑点 0.1%</small></span></li></ol></div>

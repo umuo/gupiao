@@ -4,6 +4,7 @@ export type IndicatorKey =
   | "ma5"
   | "ma10"
   | "ma20"
+  | "ma30"
   | "rsi14"
   | "volatility20"
   | "volumeRatio20"
@@ -43,6 +44,7 @@ export const indicatorLabels: Record<IndicatorKey, string> = {
   ma5: "MA5",
   ma10: "MA10",
   ma20: "MA20",
+  ma30: "MA30",
   rsi14: "RSI(14)",
   volatility20: "20日波动率(%)",
   volumeRatio20: "量比(20日)",

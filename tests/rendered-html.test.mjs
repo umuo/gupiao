@@ -161,12 +161,37 @@ test("keeps every product surface reachable and usable on mobile", async () => {
   ]);
   assert.match(page, /mobile-nav/);
   assert.match(page, /手机端主导航/);
-  assert.match(page, /onPointerDown=\{handlePointerMove\}/);
+  assert.match(page, /onPointerDown=\{handlePointerDown\}/);
+  assert.match(page, /onWheel=\{handleWheel\}/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(styles, /env\(safe-area-inset-bottom\)/);
   assert.match(styles, /height: 100dvh/);
   assert.match(styles, /\.notification-row/);
   assert.match(styles, /\.managed-user-list article/);
+});
+
+test("loads listing-to-present history and exposes interactive K-line strategy horizons", async () => {
+  const [page, tickflowRoute, strategyModel, strategyEngine, styles] = await Promise.all([
+    read("app/page.tsx"),
+    read("app/api/tickflow/route.ts"),
+    read("app/strategy-model.ts"),
+    read("app/strategy-engine.ts"),
+    read("app/globals.css"),
+  ]);
+  assert.match(page, /count=10000/);
+  assert.match(tickflowRoute, /Math\.min\(10_000/);
+  assert.match(page, /MA5/);
+  assert.match(page, /MA10/);
+  assert.match(page, /MA30/);
+  assert.match(page, /自定义 MA/);
+  assert.match(page, /拖动浏览历史K线/);
+  assert.match(page, /短线策略/);
+  assert.match(page, /中期策略/);
+  assert.match(page, /长线策略/);
+  assert.match(strategyModel, /ma30/);
+  assert.match(strategyEngine, /movingAverage\(bars, index, 30\)/);
+  assert.match(styles, /\.chart-navigator/);
+  assert.match(styles, /\.strategy-group/);
 });
 
 test("pins scheduling, notifications, and displayed records to Asia Shanghai", async () => {

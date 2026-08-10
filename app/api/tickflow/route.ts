@@ -9,7 +9,9 @@ export async function GET(request: Request) {
     .map((symbol) => symbol.trim().toUpperCase())
     .filter(Boolean);
   const symbols = [...new Set(requested)].slice(0, 8);
-  const count = Math.min(260, Math.max(30, Number(url.searchParams.get("count")) || 220));
+  // TickFlow allows up to 10,000 bars per request. A-share daily history is
+  // shorter than that, so a single-symbol request can cover listing to today.
+  const count = Math.min(10_000, Math.max(30, Number(url.searchParams.get("count")) || 220));
 
   if (!symbols.length || symbols.some((symbol) => !SYMBOL_PATTERN.test(symbol))) {
     return Response.json({ error: "Invalid A-share symbol" }, { status: 400 });
