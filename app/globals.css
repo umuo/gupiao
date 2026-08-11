@@ -889,6 +889,25 @@ td small { color: #5f6d83; display: block; font-family: var(--font-geist-mono), 
 .parameters label > span { color: #8d9aaf; display: flex; font-size: 9px; justify-content: space-between; }
 .parameters label > span b { color: #a7c5fa; font-family: var(--font-geist-mono), monospace; }
 
+.recommended-risk {
+  align-items: center;
+  background: linear-gradient(135deg, rgba(120, 215, 182, .12), rgba(76, 141, 255, .06));
+  border: 1px solid rgba(120, 215, 182, .3);
+  border-radius: 7px;
+  color: #c9eee2;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  margin-top: 11px;
+  padding: 9px;
+  text-align: left;
+  width: 100%;
+}
+.recommended-risk b, .recommended-risk small { display: block; }
+.recommended-risk b { font-size: 9px; }
+.recommended-risk small { color: #71988c; font-size: 7px; margin-top: 3px; }
+.recommended-risk em { color: #8fc9b6; font-family: var(--font-geist-mono), monospace; font-size: 7px; font-style: normal; }
+
 input[type="range"] {
   accent-color: var(--blue);
   cursor: pointer;

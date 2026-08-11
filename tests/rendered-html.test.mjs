@@ -192,6 +192,12 @@ test("loads listing-to-present history and exposes interactive K-line strategy t
   assert.match(page, /MA5 回踩反转/);
   assert.match(page, /RSI 趋势修复/);
   assert.match(page, /长期多头排列/);
+  assert.match(page, /ccb-steady-trend/);
+  assert.match(page, /建行低波稳健趋势/);
+  assert.match(page, /volatility20.*rightValue: 1\.6/);
+  assert.match(page, /rsi14.*rightValue: 62/);
+  assert.match(page, /recommendedRisk: \{ position: 60, stopLoss: 8, takeProfit: 35 \}/);
+  assert.match(page, /应用回测建议参数/);
   assert.ok((page.match(/builtin: true/g) ?? []).length >= 12);
   assert.match(strategyModel, /ma30/);
   assert.match(strategyModel, /ma60/);
@@ -201,6 +207,7 @@ test("loads listing-to-present history and exposes interactive K-line strategy t
   assert.match(styles, /\.chart-navigator/);
   assert.match(styles, /\.strategy-group/);
   assert.match(styles, /\.strategy-tabs/);
+  assert.match(styles, /\.recommended-risk/);
 });
 
 test("serves stock-name search from a generated catalog with bounded upstream waits", async () => {
