@@ -3,8 +3,10 @@
 import { useMemo, useState } from "react";
 import {
   defaultStrategyDraft,
+  indicatorGroups,
   indicatorLabels,
   operatorLabels,
+  strategyPresets,
   strategyRuleSummary,
   type IndicatorKey,
   type RuleLogic,
@@ -28,8 +30,11 @@ type StudioProps = {
   onClose: () => void;
 };
 
-const indicatorOptions = Object.entries(indicatorLabels) as [IndicatorKey, string][];
 const operatorOptions = Object.entries(operatorLabels) as [RuleOperator, string][];
+
+function IndicatorOptions() {
+  return indicatorGroups.map((group) => <optgroup label={group.label} key={group.label}>{group.keys.map((value) => <option key={value} value={value}>{indicatorLabels[value]}</option>)}</optgroup>);
+}
 
 function RuleEditor({ title, tone, rules, logic, onChange, onLogicChange }: {
   title: string;
@@ -47,12 +52,12 @@ function RuleEditor({ title, tone, rules, logic, onChange, onLogicChange }: {
     <div className="rule-section-title"><div><i /> <b>{title}</b><span>{rules.length} 个条件</span></div><select value={logic} onChange={(event) => onLogicChange(event.target.value as RuleLogic)} aria-label={`${title}组合方式`}><option value="and">全部满足</option><option value="or">任一满足</option></select></div>
     <div className="rule-list">{rules.map((rule, index) => <div className="rule-row" key={`${title}-${index}`}>
       <span className="rule-number">{index + 1}</span>
-      <select value={rule.left} onChange={(event) => patchRule(index, { left: event.target.value as IndicatorKey })} aria-label="左侧指标">{indicatorOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+      <select value={rule.left} onChange={(event) => patchRule(index, { left: event.target.value as IndicatorKey })} aria-label="左侧指标"><IndicatorOptions /></select>
       <select value={rule.operator} onChange={(event) => patchRule(index, { operator: event.target.value as RuleOperator })} aria-label="比较方式">{operatorOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
       <select value={rule.rightType} onChange={(event) => patchRule(index, event.target.value === "value" ? { rightType: "value", rightValue: 0 } : { rightType: "indicator", rightIndicator: "ma20" })} aria-label="比较对象类型"><option value="indicator">指标</option><option value="value">数值</option></select>
       {rule.rightType === "indicator"
-        ? <select value={rule.rightIndicator ?? "ma20"} onChange={(event) => patchRule(index, { rightIndicator: event.target.value as IndicatorKey })} aria-label="右侧指标">{indicatorOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-        : <input type="number" step="0.1" value={rule.rightValue ?? 0} onChange={(event) => patchRule(index, { rightValue: Number(event.target.value) })} aria-label="比较数值" />}
+        ? <select value={rule.rightIndicator ?? "ma20"} onChange={(event) => patchRule(index, { rightIndicator: event.target.value as IndicatorKey })} aria-label="右侧指标"><IndicatorOptions /></select>
+        : <input type="number" step="any" value={rule.rightValue ?? 0} onChange={(event) => patchRule(index, { rightValue: Number(event.target.value) })} aria-label="比较数值" />}
       <button className="remove-rule" onClick={() => rules.length > 1 && onChange(rules.filter((_, itemIndex) => itemIndex !== index))} disabled={rules.length <= 1} aria-label="删除条件">×</button>
     </div>)}</div>
     <button className="add-rule" onClick={() => onChange([...rules, { left: "close", operator: "gt", rightType: "indicator", rightIndicator: "ma20" }])} disabled={rules.length >= 5}>＋ 添加条件</button>
@@ -61,6 +66,7 @@ function RuleEditor({ title, tone, rules, logic, onChange, onLogicChange }: {
 
 function ManualBuilder({ initialDraft, aiGenerated, onSaved }: { initialDraft?: StrategyDraft; aiGenerated?: boolean; onSaved: (strategy: SavedStrategy) => void }) {
   const [draft, setDraft] = useState<StrategyDraft>(initialDraft ?? defaultStrategyDraft());
+  const [presetId, setPresetId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -81,8 +87,19 @@ function ManualBuilder({ initialDraft, aiGenerated, onSaved }: { initialDraft?: 
     } finally { setSaving(false); }
   };
 
+  const applyPreset = (preset: (typeof strategyPresets)[number]) => {
+    setPresetId(preset.id);
+    setDraft({
+      ...preset.draft,
+      entryRules: preset.draft.entryRules.map((rule) => ({ ...rule })),
+      exitRules: preset.draft.exitRules.map((rule) => ({ ...rule })),
+    });
+    setError("");
+  };
+
   return <div className="studio-builder">
     {aiGenerated && <div className="ai-review-note"><i>✦</i><span><b>AI 已生成结构化策略</b><small>请检查条件后再保存，AI 结果不构成投资建议。</small></span></div>}
+    {!aiGenerated && <section className="strategy-presets"><header><div><span>QUICK START</span><b>一键策略模板</b></div><small>填入完整规则后，可继续微调每个指标、阈值和组合逻辑</small></header><div>{strategyPresets.map((preset) => <button key={preset.id} className={presetId === preset.id ? "active" : ""} onClick={() => applyPreset(preset)}><i>{presetId === preset.id ? "✓" : "＋"}</i><span><b>{preset.name}</b><small>{preset.note}</small></span></button>)}</div></section>}
     <div className="strategy-basics"><label><span>策略名称</span><input value={draft.name} maxLength={30} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label><span>风格标签</span><input value={draft.tag} maxLength={8} onChange={(event) => setDraft({ ...draft, tag: event.target.value })} /></label><label className="wide"><span>策略说明</span><textarea value={draft.description} maxLength={240} rows={2} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label></div>
     <RuleEditor title="买入条件" tone="buy" rules={draft.entryRules} logic={draft.entryLogic} onChange={(entryRules) => setDraft({ ...draft, entryRules })} onLogicChange={(entryLogic) => setDraft({ ...draft, entryLogic })} />
     <RuleEditor title="卖出条件" tone="sell" rules={draft.exitRules} logic={draft.exitLogic} onChange={(exitRules) => setDraft({ ...draft, exitRules })} onLogicChange={(exitLogic) => setDraft({ ...draft, exitLogic })} />

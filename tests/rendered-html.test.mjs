@@ -171,11 +171,13 @@ test("keeps every product surface reachable and usable on mobile", async () => {
 });
 
 test("loads listing-to-present history and exposes interactive K-line strategy tabs", async () => {
-  const [page, tickflowRoute, strategyModel, strategyEngine, styles] = await Promise.all([
+  const [page, tickflowRoute, strategyModel, strategyEngine, strategyStudio, aiRoute, styles] = await Promise.all([
     read("app/page.tsx"),
     read("app/api/tickflow/route.ts"),
     read("app/strategy-model.ts"),
     read("app/strategy-engine.ts"),
+    read("app/strategy-studio.tsx"),
+    read("app/api/ai/strategy/route.ts"),
     read("app/globals.css"),
   ]);
   assert.match(page, /count=10000/);
@@ -204,10 +206,18 @@ test("loads listing-to-present history and exposes interactive K-line strategy t
   assert.match(strategyEngine, /movingAverage\(bars, index, 30\)/);
   assert.match(strategyEngine, /movingAverage\(bars, index, 60\)/);
   assert.match(strategyEngine, /indicatorWarmup/);
+  assert.match(strategyEngine, /macdValue/);
+  assert.match(strategyEngine, /bollingerBand/);
+  assert.match(strategyEngine, /atrPercent/);
+  assert.match(strategyStudio, /一键策略模板/);
+  assert.match(strategyStudio, /可继续微调每个指标、阈值和组合逻辑/);
+  assert.match(strategyStudio, /<optgroup/);
+  assert.match(aiRoute, /allowedIndicatorKeys/);
   assert.match(styles, /\.chart-navigator/);
   assert.match(styles, /\.strategy-group/);
   assert.match(styles, /\.strategy-tabs/);
   assert.match(styles, /\.recommended-risk/);
+  assert.match(styles, /\.strategy-presets/);
 });
 
 test("serves stock-name search from a generated catalog with bounded upstream waits", async () => {

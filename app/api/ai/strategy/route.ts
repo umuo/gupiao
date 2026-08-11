@@ -1,6 +1,8 @@
 import { getAppUser } from "../../../auth";
 import { assertPublicHttpsUrl } from "../../../public-url";
-import { sanitizeStrategyDraft } from "../../../strategy-model";
+import { indicatorLabels, sanitizeStrategyDraft } from "../../../strategy-model";
+
+const allowedIndicatorKeys = Object.keys(indicatorLabels).join(", ");
 
 function compatibleEndpoint(baseUrl: string) {
   const raw = baseUrl.trim().replace(/\/+$/, "");
@@ -27,7 +29,7 @@ export async function POST(request: Request) {
     const prompt = String(payload.prompt ?? "").trim().slice(0, 2000);
     if (!apiKey || !model || !prompt) throw new Error("API Key、模型和策略描述都不能为空");
 
-    const systemPrompt = `你是A股日线量化策略设计助手。把用户想法转换成纯JSON，不要Markdown，不要解释。\nJSON结构：{"name":"30字以内","description":"240字以内","tag":"8字以内","entryLogic":"and或or","exitLogic":"and或or","entryRules":[规则],"exitRules":[规则]}。\n每条规则结构：{"left":"指标","operator":"操作符","rightType":"indicator或value","rightIndicator":"指标（rightType为indicator时）","rightValue":数值（rightType为value时）}。\n允许指标：close, open, ma5, ma10, ma20, rsi14, volatility20（百分数，如1.8表示1.8%）, volumeRatio20, highest20。允许操作符：gt, lt, crossesAbove, crossesBelow。买卖条件各1到5条。只能使用这些字段和枚举，不得生成代码。`;
+    const systemPrompt = `你是A股日线量化策略设计助手。把用户想法转换成纯JSON，不要Markdown，不要解释。\nJSON结构：{"name":"30字以内","description":"240字以内","tag":"8字以内","entryLogic":"and或or","exitLogic":"and或or","entryRules":[规则],"exitRules":[规则]}。\n每条规则结构：{"left":"指标","operator":"操作符","rightType":"indicator或value","rightIndicator":"指标（rightType为indicator时）","rightValue":数值（rightType为value时）}。\n允许指标：${allowedIndicatorKeys}。volatility20、atr14Percent、roc20使用百分数（如1.8表示1.8%）；volumeRatio20、amountRatio20使用倍数；MACD指标可与0或彼此比较。允许操作符：gt, lt, crossesAbove, crossesBelow。买卖条件各1到5条。只能使用这些字段和枚举，不得生成代码。`;
     const upstream = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
