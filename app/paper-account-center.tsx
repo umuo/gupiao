@@ -27,6 +27,22 @@ function percent(value: number) {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function axisMoney(value: number) {
+  const absolute = Math.abs(value);
+  if (absolute >= 100_000_000) return `¥${(value / 100_000_000).toFixed(absolute >= 1_000_000_000 ? 0 : 1)}亿`;
+  if (absolute >= 10_000) return `¥${(value / 10_000).toFixed(absolute >= 100_000 ? 0 : 1)}万`;
+  return `¥${Math.round(value).toLocaleString("zh-CN")}`;
+}
+
+function chartDate(value: string) {
+  const [, month = "", day = ""] = value.split("-");
+  return `${month}/${day}`;
+}
+
+function equityChartInsets(width: number) {
+  return { left: width < 420 ? 48 : 58, right: 14, top: 14, bottom: 28 };
+}
+
 function parseCapital(rawValue: string) {
   const normalized = rawValue.trim().replace(/[\s,，]/g, "").toLowerCase();
   const match = normalized.match(/^(\d+(?:\.\d+)?)(w|万)?$/);
@@ -37,6 +53,7 @@ function parseCapital(rawValue: string) {
 
 function EquityCurve({ account }: { account: PaperAccountView }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   useEffect(() => {
     const canvas = ref.current;
     const parent = canvas?.parentElement;
@@ -51,24 +68,122 @@ function EquityCurve({ account }: { account: PaperAccountView }) {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.scale(dpr, dpr); ctx.clearRect(0, 0, rect.width, rect.height);
-      const values = account.snapshots.map((item) => item.equity);
-      if (values.length < 2) {
+      const snapshots = account.snapshots;
+      const values = snapshots.map((item) => item.equity);
+      if (!values.length) {
         ctx.fillStyle = "#617087"; ctx.font = "10px ui-monospace, monospace"; ctx.textAlign = "center";
-        ctx.fillText("产生第二个交易日快照后显示权益曲线", rect.width / 2, rect.height / 2);
+        ctx.fillText("等待首个交易日权益快照", rect.width / 2, rect.height / 2);
         return;
       }
-      const pad = 16; const width = rect.width - pad * 2; const height = rect.height - pad * 2;
-      const minimum = Math.min(...values); const maximum = Math.max(...values); const range = Math.max(1, maximum - minimum);
-      const points = values.map((value, index) => ({ x: pad + index / (values.length - 1) * width, y: pad + (1 - (value - minimum) / range) * height }));
+      const inset = equityChartInsets(rect.width);
+      const width = Math.max(1, rect.width - inset.left - inset.right);
+      const height = Math.max(1, rect.height - inset.top - inset.bottom);
+      const observedMinimum = Math.min(account.initialCapital, ...values);
+      const observedMaximum = Math.max(account.initialCapital, ...values);
+      const padding = Math.max((observedMaximum - observedMinimum) * .16, Math.max(Math.abs(observedMaximum), 1) * .005, 1);
+      const minimum = observedMinimum - padding;
+      const maximum = observedMaximum + padding;
+      const range = maximum - minimum;
+      const xFor = (index: number) => values.length === 1 ? inset.left + width / 2 : inset.left + index / (values.length - 1) * width;
+      const yFor = (value: number) => inset.top + (1 - (value - minimum) / range) * height;
+      const points = values.map((value, index) => ({ x: xFor(index), y: yFor(value) }));
+
+      ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
+      ctx.lineWidth = 1;
+      for (let tick = 0; tick <= 4; tick += 1) {
+        const ratio = tick / 4;
+        const y = inset.top + ratio * height;
+        const value = maximum - ratio * range;
+        ctx.beginPath(); ctx.moveTo(inset.left, y); ctx.lineTo(rect.width - inset.right, y);
+        ctx.strokeStyle = tick === 4 ? "#28364a" : "rgba(43,58,78,.55)"; ctx.stroke();
+        ctx.fillStyle = "#64758c"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+        ctx.fillText(axisMoney(value), inset.left - 8, y);
+      }
+
+      const xTickCount = rect.width >= 620 ? 5 : 3;
+      const xTickIndexes = Array.from({ length: Math.min(xTickCount, values.length) }, (_, tick) => values.length === 1 ? 0 : Math.round(tick * (values.length - 1) / (Math.min(xTickCount, values.length) - 1)));
+      [...new Set(xTickIndexes)].forEach((index) => {
+        const x = xFor(index);
+        ctx.beginPath(); ctx.moveTo(x, inset.top); ctx.lineTo(x, rect.height - inset.bottom);
+        ctx.strokeStyle = "rgba(36,49,68,.35)"; ctx.stroke();
+        ctx.fillStyle = "#607087"; ctx.textBaseline = "top";
+        ctx.textAlign = index === 0 && values.length > 1 ? "left" : index === values.length - 1 && values.length > 1 ? "right" : "center";
+        ctx.fillText(chartDate(snapshots[index].snapshotDate), x, rect.height - inset.bottom + 8);
+      });
+
+      const baselineY = yFor(account.initialCapital);
+      ctx.save(); ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(inset.left, baselineY); ctx.lineTo(rect.width - inset.right, baselineY);
+      ctx.strokeStyle = "rgba(125,145,172,.45)"; ctx.stroke(); ctx.restore();
+
       const positive = values.at(-1)! >= account.initialCapital;
-      const gradient = ctx.createLinearGradient(0, pad, 0, rect.height - pad);
+      const lineColor = positive ? "#37d6aa" : "#ff5b6e";
+      const gradient = ctx.createLinearGradient(0, inset.top, 0, rect.height - inset.bottom);
       gradient.addColorStop(0, positive ? "rgba(55,214,170,.28)" : "rgba(255,91,110,.25)"); gradient.addColorStop(1, "rgba(13,19,29,0)");
-      ctx.beginPath(); ctx.moveTo(points[0].x, rect.height - pad); points.forEach((point) => ctx.lineTo(point.x, point.y)); ctx.lineTo(points.at(-1)!.x, rect.height - pad); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
-      ctx.beginPath(); points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)); ctx.strokeStyle = positive ? "#37d6aa" : "#ff5b6e"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(points[0].x, rect.height - inset.bottom); points.forEach((point) => ctx.lineTo(point.x, point.y)); ctx.lineTo(points.at(-1)!.x, rect.height - inset.bottom); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
+      ctx.beginPath(); points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)); ctx.strokeStyle = lineColor; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.stroke();
+
+      const latest = points.at(-1)!;
+      ctx.beginPath(); ctx.arc(latest.x, latest.y, 3, 0, Math.PI * 2); ctx.fillStyle = lineColor; ctx.fill();
+
+      const activeIndex = hoverIndex == null ? null : Math.min(values.length - 1, Math.max(0, hoverIndex));
+      if (activeIndex != null) {
+        const point = points[activeIndex];
+        const snapshot = snapshots[activeIndex];
+        const totalReturn = account.initialCapital ? (snapshot.equity / account.initialCapital - 1) * 100 : 0;
+        const previous = activeIndex ? values[activeIndex - 1] : account.initialCapital;
+        const dailyChange = snapshot.equity - previous;
+        ctx.save(); ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(point.x, inset.top); ctx.lineTo(point.x, rect.height - inset.bottom); ctx.moveTo(inset.left, point.y); ctx.lineTo(rect.width - inset.right, point.y);
+        ctx.strokeStyle = "rgba(119,153,198,.62)"; ctx.stroke(); ctx.restore();
+        ctx.beginPath(); ctx.arc(point.x, point.y, 5, 0, Math.PI * 2); ctx.fillStyle = "#0b111b"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = lineColor; ctx.stroke();
+
+        const tooltipWidth = Math.min(176, Math.max(146, rect.width - 12));
+        const tooltipHeight = 62;
+        const tooltipX = point.x + tooltipWidth + 12 > rect.width ? point.x - tooltipWidth - 10 : point.x + 10;
+        const tooltipY = Math.min(rect.height - inset.bottom - tooltipHeight - 4, Math.max(inset.top + 4, point.y - tooltipHeight / 2));
+        ctx.fillStyle = "rgba(10,17,27,.96)"; ctx.strokeStyle = "#33445c"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.roundRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight, 7); ctx.fill(); ctx.stroke();
+        ctx.textAlign = "left"; ctx.textBaseline = "top";
+        ctx.font = "9px ui-monospace, SFMono-Regular, monospace"; ctx.fillStyle = "#7588a3"; ctx.fillText(snapshot.snapshotDate, tooltipX + 10, tooltipY + 8);
+        ctx.font = "bold 11px ui-monospace, SFMono-Regular, monospace"; ctx.fillStyle = "#dbe5f3"; ctx.fillText(`权益 ${money(snapshot.equity, 2)}`, tooltipX + 10, tooltipY + 24);
+        ctx.font = "9px ui-monospace, SFMono-Regular, monospace"; ctx.fillStyle = totalReturn >= 0 ? "#53dfc1" : "#ff7b8b";
+        ctx.fillText(`累计 ${percent(totalReturn)}  当日 ${dailyChange >= 0 ? "+" : ""}${money(dailyChange, 2)}`, tooltipX + 10, tooltipY + 44);
+      }
     };
     draw(); const observer = new ResizeObserver(draw); observer.observe(parent); return () => observer.disconnect();
-  }, [account]);
-  return <canvas ref={ref} aria-label={`${account.name}每日权益曲线`} />;
+  }, [account, hoverIndex]);
+
+  const indexAt = (clientX: number) => {
+    const canvas = ref.current;
+    if (!canvas || !account.snapshots.length) return null;
+    if (account.snapshots.length === 1) return 0;
+    const rect = canvas.getBoundingClientRect();
+    const inset = equityChartInsets(rect.width);
+    const width = Math.max(1, rect.width - inset.left - inset.right);
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left - inset.left) / width));
+    return Math.round(ratio * (account.snapshots.length - 1));
+  };
+
+  return <canvas
+    ref={ref}
+    tabIndex={0}
+    aria-label={`${account.name}每日权益曲线；横轴为日期，纵轴为总资产。移动鼠标、触摸图表或使用左右方向键查看具体值。`}
+    onPointerDown={(event) => setHoverIndex(indexAt(event.clientX))}
+    onPointerMove={(event) => setHoverIndex(indexAt(event.clientX))}
+    onPointerLeave={(event) => { if (event.pointerType === "mouse") setHoverIndex(null); }}
+    onFocus={() => setHoverIndex((current) => current ?? Math.max(0, account.snapshots.length - 1))}
+    onBlur={() => setHoverIndex(null)}
+    onKeyDown={(event) => {
+      if (!account.snapshots.length) return;
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        const direction = event.key === "ArrowLeft" ? -1 : 1;
+        setHoverIndex((current) => Math.min(account.snapshots.length - 1, Math.max(0, (current ?? account.snapshots.length - 1) + direction)));
+      } else if (event.key === "Home" || event.key === "End") {
+        event.preventDefault(); setHoverIndex(event.key === "Home" ? 0 : account.snapshots.length - 1);
+      }
+    }}
+  />;
 }
 
 function AccountForm({ account, watchlist, strategies, onCancel, onSaved }: {
@@ -232,7 +347,7 @@ export function PaperAccountCenter({ open, watchlist, strategies, onClose, onToa
       <section className="paper-detail">{selected ? <>
         <header className="paper-detail-header"><div><span className={`paper-status ${selected.status}`}>{selected.status === "active" ? "● 运行中" : "Ⅱ 已暂停"}</span><h3>{selected.name}</h3><p>{selected.description || "暂无说明"}</p></div><div><button onClick={() => setFormAccount(selected)}>编辑</button><button className="danger" onClick={() => remove(selected)}>删除</button></div></header>
         <div className="paper-metrics"><article><span>当前总资产</span><b>{money(selected.metrics.equity)}</b><small>本金 {money(selected.initialCapital)}</small></article><article><span>累计收益</span><b className={selected.metrics.totalReturn >= 0 ? "up" : "down"}>{percent(selected.metrics.totalReturn)}</b><small>今日 {percent(selected.metrics.dailyReturn)}</small></article><article><span>已实现盈亏</span><b className={selected.metrics.realizedPnl >= 0 ? "up" : "down"}>{money(selected.metrics.realizedPnl, 2)}</b><small>浮动 {money(selected.metrics.unrealizedPnl, 2)}</small></article><article><span>可用资金</span><b>{money(selected.cash)}</b><small>仓位 {selected.positionPercent}%</small></article></div>
-        <div className="paper-curve-card"><header><div><span>DAILY EQUITY</span><b>每日权益</b></div><small>{selected.lastValuationDate ? `最近估值 ${selected.lastValuationDate}` : "等待首次行情估值"}</small></header><div><EquityCurve account={selected} /></div></div>
+        <div className="paper-curve-card"><header><div><span>DAILY EQUITY</span><b>每日权益</b></div><div className="paper-curve-meta"><small>{selected.lastValuationDate ? `最近估值 ${selected.lastValuationDate}` : "等待首次行情估值"}</small><small>悬停 / 触摸查看具体值</small></div></header><div><EquityCurve account={selected} /></div></div>
         {selectedBuyOrder && selectedBuyOrder.shares < 100 && <div className="paper-execution-warning"><i>!</i><span><b>当前仓位不足以买入一手</b><small>按最新价约需 {money(selectedBuyOrder.requiredForOneLot, 2)}，当前 {selected.positionPercent}% 仓位预算为 {money(selectedBuyOrder.allocation, 2)}；请把仓位调到至少 {selectedBuyOrder.minimumPositionPercent}% 或增加本金。信号仍会通知，但不会违规超仓成交。</small></span></div>}
         <div className="paper-info-grid"><section><header><span>执行配置</span><b>{selected.stockName} · {selected.symbol}</b></header><dl><div><dt>策略快照</dt><dd className="paper-strategy-summary">{(selected.strategies?.length ? selected.strategies : [{ id: selected.strategyId, name: selected.strategyName, version: selected.strategyVersion, contentHash: selected.strategySnapshotHash }]).map((strategy) => <span key={strategy.id}>{strategy.name} · v{strategy.version} · {strategy.contentHash.slice(0, 8)}</span>)}</dd></div><div><dt>组合规则</dt><dd>任一策略触发即执行</dd></div><div><dt>单次仓位</dt><dd>{selected.positionPercent}%</dd></div><div><dt>止损 / 止盈</dt><dd>{selected.stopLoss}% / {selected.takeProfit}%</dd></div><div><dt>撮合规则</dt><dd>佣金 0.025% · 滑点 0.1%</dd></div></dl></section><section className="paper-task-card"><header><span>自动检查与通知</span><b className={selected.automation?.enabled ? "running" : ""}>{selected.automation ? selected.automation.enabled ? "运行中" : "已停用" : "未配置"}</b></header>{selected.automation ? <><p>{selected.automation.dataMode === "realtime" ? `实时行情 · 每 ${selected.automation.intervalMinutes} 分钟` : `免费日K · ${selected.automation.runTime}`} · {APP_TIME_ZONE}</p><small>最近运行：{selected.automation.lastStatus === "failed" ? `失败 · ${selected.automation.lastError || "请查看运行记录"}` : selected.automation.lastStatus === "retrying" ? "自动重试中" : selected.automation.lastStatus === "succeeded" ? "检查完成" : "等待首次运行"}</small><small>渠道：{selected.automation.notificationChannelNames.join("、") || "未配置"}</small><button onClick={() => onConfigureTask(targetFor(selected))}>管理定时任务 →</button></> : <><p>不配置任务也可以每天手动更新并查看收益。</p><small>配置后，任一策略触发都会执行模拟成交并发送通知。</small><button onClick={() => onConfigureTask(targetFor(selected))}>＋ 配置定时任务</button></>}</section></div>
         <section className="paper-position-card"><header><div><span>POSITION</span><b>当前持仓</b></div><small>{selected.position ? "1 个持仓" : "当前空仓"}</small></header>{selected.position ? <div className="paper-position-row"><span><b>{selected.position.stockName}</b><small>{selected.position.symbol}</small></span><span><small>数量</small><b>{selected.position.shares.toLocaleString("zh-CN")} 股</b></span><span><small>成本 / 现价</small><b>{selected.position.averageCost.toFixed(3)} / {selected.position.lastPrice.toFixed(3)}</b></span><span><small>浮动盈亏</small><b className={selected.metrics.unrealizedPnl >= 0 ? "up" : "down"}>{money(selected.metrics.unrealizedPnl, 2)}</b></span></div> : <div className="paper-no-position">等待策略产生买入信号后建立模拟持仓</div>}</section>

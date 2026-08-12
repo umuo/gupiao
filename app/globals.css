@@ -1445,8 +1445,12 @@ input[type="range"] {
 .paper-curve-card header span, .paper-position-card header span, .paper-trades-card header span { color: #5d6e88; display: block; font-family: var(--font-geist-mono), monospace; font-size: 7px; letter-spacing: .12em; }
 .paper-curve-card header b, .paper-position-card header b, .paper-trades-card header b { display: block; font-size: 10px; margin-top: 2px; }
 .paper-curve-card header small, .paper-position-card header small, .paper-trades-card header small { color: #627086; font-size: 7px; }
-.paper-curve-card > div { height: 125px; margin-top: 8px; }
-.paper-curve-card canvas { height: 100%; width: 100%; }
+.paper-curve-meta { text-align: right; }
+.paper-curve-meta small { display: block; line-height: 1.55; }
+.paper-curve-meta small:last-child { color: #788ca9; }
+.paper-curve-card > div:last-child { height: 210px; margin-top: 8px; }
+.paper-curve-card canvas { cursor: crosshair; display: block; height: 100%; outline: none; touch-action: pan-y; width: 100%; }
+.paper-curve-card canvas:focus-visible { border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(76, 141, 255, .55); }
 .paper-info-grid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; margin-bottom: 10px; }
 .paper-execution-warning { align-items: center; background: rgba(244, 201, 93, .07); border: 1px solid rgba(244, 201, 93, .2); border-radius: 9px; display: flex; gap: 10px; margin-bottom: 10px; padding: 10px 12px; }
 .paper-execution-warning > i { align-items: center; background: rgba(244, 201, 93, .13); border-radius: 50%; color: #e0bd63; display: flex; flex: 0 0 24px; font-size: 10px; font-style: normal; height: 24px; justify-content: center; }
@@ -1903,7 +1907,7 @@ input[type="range"] {
   .paper-metrics article { padding: 11px; }
   .paper-metrics span, .paper-metrics small { font-size: 9px; }
   .paper-metrics b { font-size: 13px; }
-  .paper-curve-card > div { height: 150px; }
+  .paper-curve-card > div:last-child { height: 200px; }
   .paper-info-grid section > header { align-items: flex-start; gap: 8px; }
   .paper-info-grid section > header b { text-align: right; }
   .paper-info-grid dt { font-size: 9px; }

@@ -147,6 +147,9 @@ test("persists paper accounts and keeps simulated execution independent from not
   assert.doesNotMatch(runner, /所有通知渠道均投递失败/);
   assert.match(center, /更新今日收益/);
   assert.match(center, /配置定时任务/);
+  assert.match(center, /悬停 \/ 触摸查看具体值/);
+  assert.match(center, /onPointerMove/);
+  assert.match(center, /左右方向键/);
   assert.match(tasks, /targetAccount/);
   assert.match(tasks, /关联模拟盘/);
   assert.match(page, /我的模拟盘/);
