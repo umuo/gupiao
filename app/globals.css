@@ -1448,6 +1448,11 @@ input[type="range"] {
 .paper-curve-card > div { height: 125px; margin-top: 8px; }
 .paper-curve-card canvas { height: 100%; width: 100%; }
 .paper-info-grid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; margin-bottom: 10px; }
+.paper-execution-warning { align-items: center; background: rgba(244, 201, 93, .07); border: 1px solid rgba(244, 201, 93, .2); border-radius: 9px; display: flex; gap: 10px; margin-bottom: 10px; padding: 10px 12px; }
+.paper-execution-warning > i { align-items: center; background: rgba(244, 201, 93, .13); border-radius: 50%; color: #e0bd63; display: flex; flex: 0 0 24px; font-size: 10px; font-style: normal; height: 24px; justify-content: center; }
+.paper-execution-warning b, .paper-execution-warning small { display: block; }
+.paper-execution-warning b { color: #d7bc72; font-size: 8px; }
+.paper-execution-warning small { color: #81765a; font-size: 7px; line-height: 1.55; margin-top: 3px; }
 .paper-info-grid > section { min-height: 142px; padding: 12px; }
 .paper-info-grid section > header span { color: #607087; font-size: 7px; }
 .paper-info-grid section > header b { font-size: 9px; }

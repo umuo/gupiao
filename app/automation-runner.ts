@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { automationNotificationChannels, automationRuns, automations, notificationChannels, notificationLogs, userSettings } from "../db/schema";
 import { deliverNotification } from "./notification-delivery";
+import { notificationSignalKeyAfterDelivery, repeatedNotificationAlreadySent, skipRepeatedSignalBeforeExecution } from "./automation-outcome";
 import { decryptSecret } from "./secret-box";
 import { executePaperSignal, paperAccountState, paperStrategiesFrom, refreshPaperAccountValuation, shanghaiDate } from "./paper-account-service";
 import { combinedSignalFor } from "./strategy-combination";
@@ -200,7 +201,8 @@ export async function runAutomation(row: AutomationRow) {
   }
 
   const signalKey = `${action}:${clock.date}:${reason}`;
-  if (signalKey === row.lastSignalKey) {
+  const notificationAlreadySent = repeatedNotificationAlreadySent(signalKey, row.lastSignalKey, row.lastNotifiedAt);
+  if (skipRepeatedSignalBeforeExecution(notificationAlreadySent, Boolean(paperState))) {
     await getDb().update(automations).set(commonUpdate).where(eq(automations.id, row.id));
     return { action: null, price: bar.close, reason: "相同信号今日已通知", source };
   }
@@ -215,9 +217,16 @@ export async function runAutomation(row: AutomationRow) {
     barTimestamp: bar.timestamp,
     signalKey: `${row.id}:${signalKey}`,
   }) : null;
-  if (execution && !execution.executed && !execution.duplicate) {
-    await getDb().update(automations).set({ ...commonUpdate, lastSignalKey: signalKey }).where(eq(automations.id, row.id));
-    return { action: null, price: bar.close, reason: execution.reason, source, execution };
+  const executionWarning = execution && !execution.executed && !execution.duplicate
+    ? `检测到${action === "buy" ? "买入" : "卖出"}信号，但模拟成交未执行：${execution.reason}`
+    : null;
+  const outcomeReason = executionWarning ?? reason;
+  const actionChangedPosition = !paperState || Boolean(execution?.executed || execution?.duplicate);
+  const positionStateAfterAction = actionChangedPosition ? (action === "buy" ? "holding" : "flat") : row.positionState;
+  const entryPriceAfterAction = actionChangedPosition ? (action === "buy" ? execution?.executionPrice ?? bar.close : null) : row.entryPrice;
+  if (notificationAlreadySent && executionWarning) {
+    await getDb().update(automations).set(commonUpdate).where(eq(automations.id, row.id));
+    return { action: null, price: bar.close, reason: `相同信号仍然存在，${executionWarning.replace(/^检测到[^，]+，/, "")}`, source, execution };
   }
 
   const mappings = await getDb().select({ channelId: automationNotificationChannels.notificationChannelId }).from(automationNotificationChannels).where(and(eq(automationNotificationChannels.automationId, row.id), eq(automationNotificationChannels.userId, row.userId)));
@@ -225,20 +234,21 @@ export async function runAutomation(row: AutomationRow) {
   const channels = channelIds.length ? await getDb().select().from(notificationChannels).where(and(eq(notificationChannels.userId, row.userId), inArray(notificationChannels.id, channelIds))) : [];
 
   if (!channels.length) {
-    await writeLog(row, { type: "error", status: "failed", price: execution?.executionPrice ?? bar.close, reason: "模拟成交已记录，但任务没有可用的通知渠道" });
+    const warning = `${executionWarning ? `${executionWarning}；` : ""}${execution?.executed ? "模拟成交已记录，但" : ""}任务没有可用的通知渠道`;
+    await writeLog(row, { type: "error", status: "failed", price: execution?.executionPrice ?? bar.close, reason: warning });
     await getDb().update(automations).set({
       ...commonUpdate,
-      lastSignalKey: signalKey,
-      positionState: action === "buy" ? "holding" : "flat",
-      entryPrice: action === "buy" ? execution?.executionPrice ?? bar.close : null,
+      lastSignalKey: notificationSignalKeyAfterDelivery(signalKey, row.lastSignalKey, 0),
+      positionState: positionStateAfterAction,
+      entryPrice: entryPriceAfterAction,
     }).where(eq(automations.id, row.id));
-    return { action, price: execution?.executionPrice ?? bar.close, reason, source, execution, deliveries: { total: channelIds.length, succeeded: 0, failed: channelIds.length }, warning: "模拟成交已记录，但没有可用的通知渠道" };
+    return { action, price: execution?.executionPrice ?? bar.close, reason: outcomeReason, source, execution, deliveries: { total: channelIds.length, succeeded: 0, failed: channelIds.length }, warning };
   }
 
   const payload = {
     event: `strategy.${action}`,
     action,
-    actionText: action === "buy" ? "买入" : "卖出",
+    actionText: executionWarning ? `${action === "buy" ? "买入" : "卖出"}信号（未成交）` : action === "buy" ? "买入" : "卖出",
     automationId: row.id,
     automationName: row.name,
     symbol,
@@ -254,12 +264,15 @@ export async function runAutomation(row: AutomationRow) {
     simulatedEquity: execution?.currentEquity ?? null,
     paperAccountId: row.paperAccountId,
     paperAccountName: paperState?.account.name ?? null,
-    reason,
+    reason: outcomeReason,
+    signalReason: reason,
+    executionStatus: executionWarning ? "rejected" : execution?.executed ? "executed" : "signal-only",
+    executionReason: execution?.reason ?? null,
     dataMode: row.dataMode,
     source,
     marketTime: toAppIsoString(bar.timestamp),
     sentAt: toAppIsoString(now),
-    notice: "仅为模拟策略信号，不构成投资建议或真实委托。",
+    notice: executionWarning ? "策略信号已触发，但模拟成交未执行；请检查资金和仓位设置。" : "仅为模拟策略信号，不构成投资建议或真实委托。",
   };
   const deliveryResults = await Promise.all(channels.map(async (channel) => {
     try {
@@ -280,7 +293,7 @@ export async function runAutomation(row: AutomationRow) {
         type: action,
         status: delivered.ok ? "success" : "failed",
         price: bar.close,
-        reason: delivered.ok ? reason : delivered.error || `通知渠道返回 HTTP ${delivered.status}`,
+        reason: delivered.ok ? outcomeReason : delivered.error || `通知渠道返回 HTTP ${delivered.status}`,
         payload,
         httpStatus: delivered.status,
         notificationChannelId: channel.id,
@@ -302,12 +315,21 @@ export async function runAutomation(row: AutomationRow) {
   const missing = Math.max(0, channelIds.length - channels.length);
   await getDb().update(automations).set({
     ...commonUpdate,
-    lastSignalKey: signalKey,
+    lastSignalKey: notificationSignalKeyAfterDelivery(signalKey, row.lastSignalKey, succeeded),
     lastNotifiedAt: succeeded ? now.toISOString() : row.lastNotifiedAt,
-    positionState: action === "buy" ? "holding" : "flat",
-    entryPrice: action === "buy" ? execution?.executionPrice ?? bar.close : null,
+    positionState: positionStateAfterAction,
+    entryPrice: entryPriceAfterAction,
   }).where(eq(automations.id, row.id));
-  return { action, price: execution?.executionPrice ?? bar.close, reason, source, execution, deliveries: { total: channelIds.length, succeeded, failed: deliveryResults.length - succeeded + missing } };
+  const deliveries = { total: channelIds.length, succeeded, failed: deliveryResults.length - succeeded + missing };
+  return {
+    action,
+    price: execution?.executionPrice ?? bar.close,
+    reason: outcomeReason,
+    source,
+    execution,
+    deliveries,
+    warning: executionWarning ? `${executionWarning}；通知 ${succeeded}/${channelIds.length}` : undefined,
+  };
 }
 
 const RUN_LEASE_MS = 2 * 60_000;

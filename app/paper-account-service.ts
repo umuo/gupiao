@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { paperAccounts, paperEquitySnapshots, paperPositions, paperTrades } from "../db/schema";
+import { calculatePaperBuyOrder } from "./paper-execution";
 import type { SignalStrategy } from "./strategy-engine";
 import { parseStrategySnapshots } from "./strategy-version";
 import { appDateKey } from "./timezone";
@@ -135,12 +136,13 @@ export async function executePaperSignal(input: {
   const db = getDb();
   if (input.action === "buy") {
     if (state.position) return { executed: false, action: input.action, reason: "模拟盘已有持仓，本次不重复买入" };
-    const executionPrice = input.signalPrice * (1 + account.slippageRate);
-    const allocation = Math.min(account.cash, account.cash * account.positionPercent / 100);
-    const shares = Math.floor(Math.max(0, allocation - 5) / (executionPrice * (1 + account.commissionRate)) / 100) * 100;
-    const grossAmount = shares * executionPrice;
-    const commission = shares ? Math.max(5, grossAmount * account.commissionRate) : 0;
-    if (shares < 100 || grossAmount + commission > account.cash) return { executed: false, action: input.action, reason: "可用资金不足以买入 100 股" };
+    const order = calculatePaperBuyOrder({ cash: account.cash, positionPercent: account.positionPercent, signalPrice: input.signalPrice, commissionRate: account.commissionRate, slippageRate: account.slippageRate });
+    const { executionPrice, shares, grossAmount, commission } = order;
+    if (shares < 100 || grossAmount + commission > account.cash) return {
+      executed: false,
+      action: input.action,
+      reason: `目标仓位预算 ¥${order.allocation.toFixed(2)}，不足买入 100 股（约需 ¥${order.requiredForOneLot.toFixed(2)}；当前资金至少需要 ${order.minimumPositionPercent}% 仓位）`,
+    };
     const cash = account.cash - grossAmount - commission;
     const averageCost = (grossAmount + commission) / shares;
     const marketValue = shares * input.signalPrice;

@@ -34,6 +34,8 @@ export type PaperAccountView = {
   positionPercent: number;
   stopLoss: number;
   takeProfit: number;
+  commissionRate: number;
+  slippageRate: number;
   status: "active" | "paused";
   lastPrice: number | null;
   lastValuationDate: string | null;
