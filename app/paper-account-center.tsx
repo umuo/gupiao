@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { calculateEquityAxisScale, formatEquityAxisMoney } from "./equity-chart";
 import type { PaperAccountTaskTarget, PaperAccountView } from "./paper-account-types";
 import { calculatePaperBuyOrder } from "./paper-execution";
 import type { SavedStrategy } from "./strategy-model";
@@ -27,20 +28,13 @@ function percent(value: number) {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-function axisMoney(value: number) {
-  const absolute = Math.abs(value);
-  if (absolute >= 100_000_000) return `¥${(value / 100_000_000).toFixed(absolute >= 1_000_000_000 ? 0 : 1)}亿`;
-  if (absolute >= 10_000) return `¥${(value / 10_000).toFixed(absolute >= 100_000 ? 0 : 1)}万`;
-  return `¥${Math.round(value).toLocaleString("zh-CN")}`;
-}
-
 function chartDate(value: string) {
   const [, month = "", day = ""] = value.split("-");
   return `${month}/${day}`;
 }
 
 function equityChartInsets(width: number) {
-  return { left: width < 420 ? 48 : 58, right: 14, top: 14, bottom: 28 };
+  return { left: width < 420 ? 62 : 72, right: 14, top: 14, bottom: 28 };
 }
 
 function parseCapital(rawValue: string) {
@@ -78,11 +72,9 @@ function EquityCurve({ account }: { account: PaperAccountView }) {
       const inset = equityChartInsets(rect.width);
       const width = Math.max(1, rect.width - inset.left - inset.right);
       const height = Math.max(1, rect.height - inset.top - inset.bottom);
-      const observedMinimum = Math.min(account.initialCapital, ...values);
-      const observedMaximum = Math.max(account.initialCapital, ...values);
-      const padding = Math.max((observedMaximum - observedMinimum) * .16, Math.max(Math.abs(observedMaximum), 1) * .005, 1);
-      const minimum = observedMinimum - padding;
-      const maximum = observedMaximum + padding;
+      const scale = calculateEquityAxisScale(values);
+      if (!scale) return;
+      const { minimum, maximum } = scale;
       const range = maximum - minimum;
       const xFor = (index: number) => values.length === 1 ? inset.left + width / 2 : inset.left + index / (values.length - 1) * width;
       const yFor = (value: number) => inset.top + (1 - (value - minimum) / range) * height;
@@ -90,15 +82,13 @@ function EquityCurve({ account }: { account: PaperAccountView }) {
 
       ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
       ctx.lineWidth = 1;
-      for (let tick = 0; tick <= 4; tick += 1) {
-        const ratio = tick / 4;
-        const y = inset.top + ratio * height;
-        const value = maximum - ratio * range;
+      scale.ticks.slice().reverse().forEach((value, tick) => {
+        const y = yFor(value);
         ctx.beginPath(); ctx.moveTo(inset.left, y); ctx.lineTo(rect.width - inset.right, y);
-        ctx.strokeStyle = tick === 4 ? "#28364a" : "rgba(43,58,78,.55)"; ctx.stroke();
+        ctx.strokeStyle = tick === scale.ticks.length - 1 ? "#28364a" : "rgba(43,58,78,.55)"; ctx.stroke();
         ctx.fillStyle = "#64758c"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
-        ctx.fillText(axisMoney(value), inset.left - 8, y);
-      }
+        ctx.fillText(formatEquityAxisMoney(value, scale.step), inset.left - 8, y);
+      });
 
       const xTickCount = rect.width >= 620 ? 5 : 3;
       const xTickIndexes = Array.from({ length: Math.min(xTickCount, values.length) }, (_, tick) => values.length === 1 ? 0 : Math.round(tick * (values.length - 1) / (Math.min(xTickCount, values.length) - 1)));
@@ -111,9 +101,11 @@ function EquityCurve({ account }: { account: PaperAccountView }) {
         ctx.fillText(chartDate(snapshots[index].snapshotDate), x, rect.height - inset.bottom + 8);
       });
 
-      const baselineY = yFor(account.initialCapital);
-      ctx.save(); ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(inset.left, baselineY); ctx.lineTo(rect.width - inset.right, baselineY);
-      ctx.strokeStyle = "rgba(125,145,172,.45)"; ctx.stroke(); ctx.restore();
+      if (account.initialCapital >= minimum && account.initialCapital <= maximum) {
+        const baselineY = yFor(account.initialCapital);
+        ctx.save(); ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(inset.left, baselineY); ctx.lineTo(rect.width - inset.right, baselineY);
+        ctx.strokeStyle = "rgba(125,145,172,.45)"; ctx.stroke(); ctx.restore();
+      }
 
       const positive = values.at(-1)! >= account.initialCapital;
       const lineColor = positive ? "#37d6aa" : "#ff5b6e";
