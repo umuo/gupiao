@@ -7,6 +7,27 @@ export type NotificationContentType = typeof notificationContentTypes[number];
 export type NotificationHeader = { name: string; value: string };
 export type NotificationChannelType = typeof notificationChannelTypes[number];
 
+type TradeNotificationExecution = {
+  executed: boolean;
+  duplicate?: boolean;
+  shares?: number;
+} | null;
+
+export function tradeNotificationDetails(action: "buy" | "sell", execution: TradeNotificationExecution) {
+  const actionLabel = action === "buy" ? "买入" : "卖出";
+  const shares = execution && (execution.executed || execution.duplicate) && Number.isFinite(execution.shares) && Number(execution.shares) > 0
+    ? Math.trunc(Number(execution.shares))
+    : 0;
+  if (shares > 0) {
+    const quantityText = `${shares.toLocaleString("zh-CN")} 股`;
+    return { shares, quantityText, actionText: `${actionLabel} ${quantityText}`, tradeSummary: `${actionLabel} ${quantityText}` };
+  }
+  if (execution) {
+    return { shares: 0, quantityText: "0 股（未成交）", actionText: `${actionLabel}信号（未成交 0 股）`, tradeSummary: `${actionLabel} 0 股（未成交）` };
+  }
+  return { shares: null, quantityText: "未执行成交（仅策略信号）", actionText: `${actionLabel}信号（未执行成交）`, tradeSummary: `${actionLabel}：未执行成交（仅策略信号）` };
+}
+
 export const defaultMessageTemplate = `{
   "event": "strategy.{{action}}",
   "action": "{{actionText}}",
@@ -15,6 +36,8 @@ export const defaultMessageTemplate = `{
   "strategy": "{{strategyName}}",
   "paper_account": "{{paperAccountName}}",
   "price": {{price}},
+  "quantity": "{{quantityText}}",
+  "trade": "{{tradeSummary}}",
   "reason": "{{reason}}",
   "time": "{{marketTime}}"
 }`;
@@ -22,14 +45,14 @@ export const defaultMessageTemplate = `{
 export const dingtalkMessageTemplate = `{
   "msgtype": "text",
   "text": {
-    "content": "【Paper Alpha】{{actionText}}提醒\\n任务：{{automationName}}\\n股票：{{stockName}}（{{symbol}}）\\n策略：{{strategyName}}\\n成交价：{{executionPrice}}\\n原因：{{reason}}\\n时间：{{marketTime}}"
+    "content": "【Paper Alpha】{{actionText}}提醒\\n任务：{{automationName}}\\n股票：{{stockName}}（{{symbol}}）\\n策略：{{strategyName}}\\n成交数量：{{quantityText}}\\n成交价：{{executionPrice}}\\n原因：{{reason}}\\n时间：{{marketTime}}"
   }
 }`;
 
 export const feishuMessageTemplate = `{
   "msg_type": "text",
   "content": {
-    "text": "【Paper Alpha】{{actionText}}提醒\\n任务：{{automationName}}\\n股票：{{stockName}}（{{symbol}}）\\n策略：{{strategyName}}\\n成交价：{{executionPrice}}\\n原因：{{reason}}\\n时间：{{marketTime}}"
+    "text": "【Paper Alpha】{{actionText}}提醒\\n任务：{{automationName}}\\n股票：{{stockName}}（{{symbol}}）\\n策略：{{strategyName}}\\n成交数量：{{quantityText}}\\n成交价：{{executionPrice}}\\n原因：{{reason}}\\n时间：{{marketTime}}"
   }
 }`;
 

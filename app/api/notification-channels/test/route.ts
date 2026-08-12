@@ -15,12 +15,17 @@ export async function POST(request: Request) {
   const now = new Date();
   const variables = {
     action: "test",
-    actionText: "测试",
+    actionText: "买入 100 股",
     automationName: "通知渠道测试",
     stockName: "建设银行",
     symbol: "601939.SH",
     strategyName: "示例策略",
     price: 8.88,
+    executionPrice: 8.88,
+    shares: 100,
+    simulatedShares: 100,
+    quantityText: "100 股",
+    tradeSummary: "买入 100 股",
     reason: "这是一条通知渠道测试消息",
     dataMode: "test",
     source: "Paper Alpha",

@@ -3,6 +3,7 @@ import { getDb } from "../db";
 import { automationNotificationChannels, automationRuns, automations, notificationChannels, notificationLogs, userSettings } from "../db/schema";
 import { deliverNotification } from "./notification-delivery";
 import { notificationSignalKeyAfterDelivery, repeatedNotificationAlreadySent, skipRepeatedSignalBeforeExecution } from "./automation-outcome";
+import { tradeNotificationDetails } from "./notification-model";
 import { decryptSecret } from "./secret-box";
 import { executePaperSignal, paperAccountState, paperStrategiesFrom, refreshPaperAccountValuation, shanghaiDate } from "./paper-account-service";
 import { combinedSignalFor } from "./strategy-combination";
@@ -245,10 +246,11 @@ export async function runAutomation(row: AutomationRow) {
     return { action, price: execution?.executionPrice ?? bar.close, reason: outcomeReason, source, execution, deliveries: { total: channelIds.length, succeeded: 0, failed: channelIds.length }, warning };
   }
 
+  const tradeDetails = tradeNotificationDetails(action, execution);
   const payload = {
     event: `strategy.${action}`,
     action,
-    actionText: executionWarning ? `${action === "buy" ? "买入" : "卖出"}信号（未成交）` : action === "buy" ? "买入" : "卖出",
+    actionText: tradeDetails.actionText,
     automationId: row.id,
     automationName: row.name,
     symbol,
@@ -260,7 +262,10 @@ export async function runAutomation(row: AutomationRow) {
     price: execution?.executionPrice ?? bar.close,
     signalPrice: bar.close,
     executionPrice: execution?.executionPrice ?? bar.close,
-    simulatedShares: execution?.shares ?? null,
+    shares: tradeDetails.shares,
+    simulatedShares: tradeDetails.shares,
+    quantityText: tradeDetails.quantityText,
+    tradeSummary: tradeDetails.tradeSummary,
     simulatedEquity: execution?.currentEquity ?? null,
     paperAccountId: row.paperAccountId,
     paperAccountName: paperState?.account.name ?? null,

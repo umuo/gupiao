@@ -28,7 +28,7 @@ type NotificationLog = {
   createdAt: string;
 };
 
-const variableNames = ["action", "actionText", "automationName", "paperAccountName", "stockName", "symbol", "strategyName", "price", "executionPrice", "simulatedShares", "reason", "dataMode", "source", "marketTime", "sentAt"];
+const variableNames = ["action", "actionText", "automationName", "paperAccountName", "stockName", "symbol", "strategyName", "price", "executionPrice", "shares", "simulatedShares", "quantityText", "tradeSummary", "reason", "dataMode", "source", "marketTime", "sentAt"];
 
 function compactUrl(value: string) {
   try { const url = new URL(value); return `${url.host}${url.pathname}`; }
