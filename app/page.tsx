@@ -45,6 +45,11 @@ type RealtimeQuote = {
   previousClose: number;
 };
 
+type WatchlistQuoteSnapshot = {
+  price: number;
+  change: number;
+};
+
 function parseCapitalInput(rawValue: string) {
   const normalized = rawValue.trim().replace(/[\s,，]/g, "").toLowerCase();
   const match = normalized.match(/^(\d+(?:\.\d+)?)(w|万)?$/);
@@ -559,6 +564,8 @@ export default function Home() {
   const [runCount, setRunCount] = useState(12);
   const [toast, setToast] = useState("");
   const realtimeQuotesRef = useRef<Record<string, RealtimeQuote>>({});
+  const dailyQuotesRef = useRef<Record<string, WatchlistQuoteSnapshot>>({});
+  const allowDailyQuotesRef = useRef(false);
   const allStrategies = useMemo(() => [...builtinStrategies, ...customStrategies], [customStrategies]);
   const selectedStrategies = useMemo(() => selectedStrategyIds.flatMap((id) => {
     const strategy = allStrategies.find((item) => item.id === id);
@@ -616,6 +623,7 @@ export default function Home() {
 
   useEffect(() => { window.localStorage.setItem("paper-alpha-watchlist-v2", JSON.stringify(watchlist)); }, [watchlist]);
   useEffect(() => { window.localStorage.setItem("paper-alpha-capital", String(initialCapital)); }, [initialCapital]);
+  useEffect(() => { allowDailyQuotesRef.current = authStatus === "ready" && (!viewer || realtimeStatus === "unavailable"); }, [authStatus, realtimeStatus, viewer]);
 
   const watchlistCodes = watchlist.map((item) => item.code).sort().join(",");
   useEffect(() => {
@@ -634,17 +642,26 @@ export default function Home() {
       })
       .then((payload) => {
         setSeries(payload.data);
+        const dailyQuotes: Record<string, WatchlistQuoteSnapshot> = {};
+        Object.entries(payload.data).forEach(([symbol, bars]) => {
+          const latest = bars.at(-1);
+          if (!latest) return;
+          const previous = bars.at(-2) ?? latest;
+          dailyQuotes[symbol] = { price: latest.close, change: (latest.close / previous.close - 1) * 100 };
+        });
+        dailyQuotesRef.current = dailyQuotes;
         setWatchlist((items) => items.map((item) => {
           const bars = payload.data[toSymbol(item.code)];
           if (!bars?.length) return { ...item, signal: "加载失败" };
           const latest = bars.at(-1)!;
-          const previous = bars.at(-2) ?? latest;
           const ma20 = average(bars.slice(-20).map((bar) => bar.close));
           const realtime = realtimeQuotesRef.current[toSymbol(item.code)];
+          const daily = dailyQuotes[toSymbol(item.code)];
+          const useDailyQuote = allowDailyQuotesRef.current;
           return {
             ...item,
-            price: realtime?.lastPrice ?? latest.close,
-            change: realtime ? (realtime.lastPrice / realtime.previousClose - 1) * 100 : (latest.close / previous.close - 1) * 100,
+            price: realtime?.lastPrice ?? (useDailyQuote ? daily.price : item.price),
+            change: realtime ? (realtime.lastPrice / realtime.previousClose - 1) * 100 : (useDailyQuote ? daily.change : item.change),
             signal: latest.close > ma20 ? "趋势向上" : "观察",
           };
         }));
@@ -677,8 +694,8 @@ export default function Home() {
       pollTimer = null;
     };
 
-    const loadRealtimeQuotes = async () => {
-      if (!active || document.visibilityState !== "visible" || requestController) return;
+    const loadRealtimeQuotes = async (force = false) => {
+      if (!active || (!force && document.visibilityState !== "visible") || requestController) return;
       requestController = new AbortController();
       requestTimeout = window.setTimeout(() => requestController?.abort(), 8_000);
       try {
@@ -689,6 +706,10 @@ export default function Home() {
         const payload = await response.json() as { configured?: boolean; quotes?: Record<string, RealtimeQuote> };
         if (response.status === 401 || response.status === 409 || payload.configured === false) {
           setRealtimeStatus("unavailable");
+          setWatchlist((items) => items.map((item) => {
+            const daily = dailyQuotesRef.current[toSymbol(item.code)];
+            return daily ? { ...item, price: daily.price, change: daily.change } : item;
+          }));
           stopPolling();
           return;
         }
@@ -718,7 +739,7 @@ export default function Home() {
 
     // Start with a snapshot, then poll only while this tab is visible.
     setRealtimeStatus("loading");
-    void loadRealtimeQuotes();
+    void loadRealtimeQuotes(true);
     pollTimer = window.setInterval(() => void loadRealtimeQuotes(), 10_000);
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") void loadRealtimeQuotes();
@@ -845,6 +866,7 @@ export default function Home() {
   const latestBar = allBars.at(-1);
   const realtimeLabel = realtimeStatus === "live" ? "实时行情 · 10秒轮询" : realtimeStatus === "loading" ? "实时行情连接中" : realtimeStatus === "error" ? "实时行情重试中" : "历史日K行情";
   const realtimeDetail = realtimeStatus === "live" && lastRealtimeAt ? timeFormatter.format(lastRealtimeAt) : realtimeStatus === "loading" ? "连接中" : realtimeStatus === "error" ? "自动重试" : "需配置 Key";
+  const watchlistQuotesPending = authStatus === "loading" || Boolean(viewer) && realtimeStatus !== "live" && realtimeStatus !== "unavailable";
   const recentTrades = backtest.trades.slice(-3).reverse();
   const viewerInitials = viewer ? viewer.displayName.slice(0, 2).toUpperCase() : "…";
 
@@ -933,7 +955,7 @@ export default function Home() {
         <div className="brand"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span><div><b>PAPER ALPHA</b><small>A股策略模拟台</small></div></div>
         <div className="market-strip" aria-label="真实数据状态">
           <span><i className={realtimeStatus === "live" ? "live-dot" : realtimeStatus === "error" ? "error-dot" : "demo-dot"} /> TickFlow {realtimeLabel}</span>
-          <b>{selectedItem?.name ?? "建设银行"} <em className={(selectedItem?.change ?? 0) >= 0 ? "up" : "down"}>{selectedItem?.price ? selectedItem.price.toFixed(2) : "—"}</em></b>
+          <b>{selectedItem?.name ?? "建设银行"} <em className={(selectedItem?.change ?? 0) >= 0 ? "up" : "down"}>{!watchlistQuotesPending && selectedItem?.price ? selectedItem.price.toFixed(2) : "—"}</em></b>
           <b>行情时间 <em>{realtimeStatus === "live" && lastRealtimeAt ? timeFormatter.format(lastRealtimeAt) : latestBar ? fullDateFormatter.format(latestBar.timestamp) : "同步中"}</em></b>
           <b><em>{realtimeStatus === "live" ? "实时快照 · 前台轮询" : "前复权 · 非实时"}</em></b>
         </div>
@@ -944,7 +966,7 @@ export default function Home() {
         <aside className="watch-panel panel">
           <div className="panel-heading"><div><span className="eyebrow">WATCHLIST</span><h2>自选股 <small>{watchlist.length}</small></h2></div><button className="add-button" onClick={() => setShowSearch((value) => !value)} aria-expanded={showSearch}>＋</button></div>
           {showSearch && <div className="stock-search"><label htmlFor="stock-search">联网搜索 A 股</label><div className="search-input-wrap"><input id="stock-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="输入股票代码或名称" /><i className={searchStatus === "loading" ? "search-spinner" : "search-cloud"}>{searchStatus === "loading" ? "" : "⌁"}</i></div><div className="search-results">{searchResults.map((stock) => <button key={stock.symbol} onClick={() => addStock(stock)}><span>{stock.name}<small>{stock.symbol}</small></span><b>＋</b></button>)}{searchStatus === "idle" && <p>输入关键词后通过 TickFlow 联网查询</p>}{searchStatus === "loading" && <p>正在联网搜索…</p>}{searchStatus === "ready" && searchResults.length === 0 && <p>没有找到匹配的 A 股</p>}{searchStatus === "error" && <p className="search-error">联网搜索暂时不可用，请重试</p>}</div></div>}
-          <div className="watch-list">{watchlist.map((stock) => <button key={stock.code} className={`watch-row ${selectedStock === stock.code ? "active" : ""}`} onClick={() => setSelectedStock(stock.code)}><span className="stock-identity"><b>{stock.name}</b><small>{toSymbol(stock.code)}</small></span><span className="stock-quote"><b>{stock.price ? stock.price.toFixed(2) : "—"}</b><small className={stock.change >= 0 ? "up" : "down"}>{stock.price ? `${stock.change >= 0 ? "+" : ""}${stock.change.toFixed(2)}%` : "读取中"}</small></span><span className={`signal signal-${stock.signal}`}>{stock.signal}</span><span className="remove-stock" role="button" tabIndex={0} aria-label={`移除${stock.name}`} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); removeStock(stock.code); } }} onClick={(event) => { event.stopPropagation(); removeStock(stock.code); }}>×</span></button>)}</div>
+          <div className="watch-list">{watchlist.map((stock) => <button key={stock.code} className={`watch-row ${selectedStock === stock.code ? "active" : ""}`} onClick={() => setSelectedStock(stock.code)}><span className="stock-identity"><b>{stock.name}</b><small>{toSymbol(stock.code)}</small></span><span className="stock-quote"><b>{!watchlistQuotesPending && stock.price ? stock.price.toFixed(2) : "—"}</b><small className={stock.change >= 0 ? "up" : "down"}>{!watchlistQuotesPending && stock.price ? `${stock.change >= 0 ? "+" : ""}${stock.change.toFixed(2)}%` : "读取中"}</small></span><span className={`signal signal-${stock.signal}`}>{stock.signal}</span><span className="remove-stock" role="button" tabIndex={0} aria-label={`移除${stock.name}`} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); removeStock(stock.code); } }} onClick={(event) => { event.stopPropagation(); removeStock(stock.code); }}>×</span></button>)}</div>
           <div className="watch-footer"><div><span>自选股行情</span><b>{realtimeStatus === "live" ? "TickFlow 实时" : "TickFlow 日K"}</b></div><div><span>轮询状态</span><b className={realtimeStatus === "live" ? "realtime-ready" : ""}>{realtimeDetail}</b></div><button onClick={() => setRefreshTick((value) => value + 1)}>↻ 同步完整历史 · {historyStatus === "loading" ? "读取中" : `${allBars.length || "—"} 根`}</button></div>
         </aside>
 

@@ -265,6 +265,9 @@ test("polls account-scoped realtime quotes without exposing the TickFlow key", a
   ]);
   assert.match(page, /\/api\/tickflow\/quotes\?symbols=/);
   assert.match(page, /setInterval\(\(\) => void loadRealtimeQuotes\(\), 10_000\)/);
+  assert.match(page, /loadRealtimeQuotes\(true\)/);
+  assert.match(page, /dailyQuotesRef/);
+  assert.match(page, /watchlistQuotesPending/);
   assert.match(page, /document\.visibilityState !== "visible"/);
   assert.match(page, /visibilitychange/);
   assert.match(page, /cache: "no-store"/);
