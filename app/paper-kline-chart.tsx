@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
-import { initialPaperKlineWindow, mapPaperTradesToBars } from "./paper-kline-model";
+import { appendPaperIntradayBars, initialPaperKlineWindow, mapPaperTradesToBars, type PaperIntradayQuote, type PaperKlineBar } from "./paper-kline-model";
 import type { PaperAccountView } from "./paper-account-types";
-import type { Kline } from "./strategy-engine";
 
 const dateFormatter = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit" });
 const fullDateFormatter = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" });
@@ -13,7 +12,7 @@ const maDefinitions = [
   { period: 30, label: "MA30", color: "#b38cff" },
 ];
 
-function movingAverageSeries(bars: Kline[], period: number) {
+function movingAverageSeries(bars: PaperKlineBar[], period: number) {
   let sum = 0;
   return bars.map((bar, index) => {
     sum += bar.close;
@@ -22,10 +21,16 @@ function movingAverageSeries(bars: Kline[], period: number) {
   });
 }
 
+function accountValuationQuote(account: Pick<PaperAccountView, "lastPrice" | "lastValuationDate">): PaperIntradayQuote | null {
+  if (!account.lastValuationDate || !account.lastPrice || account.lastPrice <= 0) return null;
+  const timestamp = Date.parse(`${account.lastValuationDate}T15:00:00+08:00`);
+  return Number.isFinite(timestamp) ? { timestamp, lastPrice: account.lastPrice } : null;
+}
+
 export function PaperKlineChart({ account }: { account: PaperAccountView }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startOffset: number; moved: boolean } | null>(null);
-  const [bars, setBars] = useState<Kline[]>([]);
+  const [bars, setBars] = useState<PaperKlineBar[]>([]);
   const [trades, setTrades] = useState(account.trades);
   const [firstBuyTradeId, setFirstBuyTradeId] = useState(account.firstBuyTrade?.id ?? null);
   const [visibleCount, setVisibleCount] = useState(120);
@@ -37,30 +42,45 @@ export function PaperKlineChart({ account }: { account: PaperAccountView }) {
 
   useEffect(() => {
     const controller = new AbortController();
+    let quoteTimer: ReturnType<typeof setInterval> | null = null;
     void Promise.all([
       fetch(`/api/tickflow?symbols=${encodeURIComponent(account.symbol)}&count=10000`, { signal: controller.signal }),
       fetch(`/api/paper-accounts?id=${encodeURIComponent(account.id)}`, { signal: controller.signal }),
     ]).then(async ([klineResponse, detailResponse]) => {
-      const klinePayload = await klineResponse.json() as { data?: Record<string, Kline[]>; error?: string };
+      const klinePayload = await klineResponse.json() as { data?: Record<string, PaperKlineBar[]>; error?: string };
       const detailPayload = await detailResponse.json() as { accounts?: PaperAccountView[]; error?: string };
       if (!klineResponse.ok) throw new Error(klinePayload.error || "读取日K失败");
-      const nextBars = klinePayload.data?.[account.symbol] ?? [];
-      if (!nextBars.length) throw new Error("没有可用日K数据");
+      const completedBars = klinePayload.data?.[account.symbol] ?? [];
+      if (!completedBars.length) throw new Error("没有可用日K数据");
       const detail = detailResponse.ok ? detailPayload.accounts?.[0] : null;
       const firstBuy = detail?.firstBuyTrade ?? account.firstBuyTrade;
       const detailTrades = detail?.trades ?? account.trades;
       const nextTrades = firstBuy && !detailTrades.some((trade) => trade.id === firstBuy.id) ? [...detailTrades, firstBuy] : detailTrades;
-      const nextMarkers = mapPaperTradesToBars(nextBars, nextTrades, firstBuy?.id ?? null);
-      const initialWindow = initialPaperKlineWindow(nextBars.length, nextMarkers.map((marker) => marker.index));
+      const fallbackBars = appendPaperIntradayBars(completedBars, nextTrades, accountValuationQuote(detail ?? { lastPrice: account.lastPrice, lastValuationDate: account.lastValuationDate }));
+      const nextMarkers = mapPaperTradesToBars(fallbackBars, nextTrades, firstBuy?.id ?? null);
+      const initialWindow = initialPaperKlineWindow(fallbackBars.length, nextMarkers.map((marker) => marker.index));
       setError("");
-      setBars(nextBars); setTrades(nextTrades); setFirstBuyTradeId(firstBuy?.id ?? null);
+      setBars(fallbackBars); setTrades(nextTrades); setFirstBuyTradeId(firstBuy?.id ?? null);
       setVisibleCount(initialWindow.visibleCount); setEndOffset(initialWindow.endOffset);
+
+      const refreshIntradayBar = async () => {
+        try {
+          const response = await fetch(`/api/tickflow/quotes?symbols=${encodeURIComponent(account.symbol)}`, { cache: "no-store", signal: controller.signal });
+          const payload = await response.json() as { quotes?: Record<string, PaperIntradayQuote> };
+          const quote = response.ok ? payload.quotes?.[account.symbol] ?? null : null;
+          if (quote && !controller.signal.aborted) setBars(appendPaperIntradayBars(completedBars, nextTrades, quote));
+        } catch {
+          // Keep the account/trade-derived intraday bar when realtime quotes are unavailable.
+        }
+      };
+      void refreshIntradayBar();
+      quoteTimer = setInterval(() => void refreshIntradayBar(), 30_000);
     }).catch((caught) => {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setError(caught instanceof Error ? caught.message : "读取模拟盘日K失败");
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [account.firstBuyTrade, account.id, account.symbol, account.trades]);
+    return () => { controller.abort(); if (quoteTimer) clearInterval(quoteTimer); };
+  }, [account.firstBuyTrade, account.id, account.lastPrice, account.lastValuationDate, account.symbol, account.trades]);
 
   const markers = useMemo(() => mapPaperTradesToBars(bars, trades, firstBuyTradeId), [bars, firstBuyTradeId, trades]);
   const maValues = useMemo(() => new Map(maDefinitions.map((definition) => [definition.period, movingAverageSeries(bars, definition.period)])), [bars]);
@@ -119,8 +139,15 @@ export function PaperKlineChart({ account }: { account: PaperAccountView }) {
       visibleBars.forEach((bar, localIndex) => {
         const x = xFor(localIndex); const up = bar.close >= bar.open; const color = up ? "#ff5b6e" : "#37d6aa";
         const openY = yFor(bar.open); const closeY = yFor(bar.close);
+        ctx.save();
+        if (bar.provisional) ctx.globalAlpha = .72;
         ctx.beginPath(); ctx.moveTo(x, yFor(bar.high)); ctx.lineTo(x, yFor(bar.low)); ctx.strokeStyle = color; ctx.lineWidth = Math.max(1, Math.min(1.5, candleWidth / 5)); ctx.stroke();
         ctx.fillStyle = up ? `${color}dd` : `${color}c2`; ctx.fillRect(x - candleWidth / 2, Math.min(openY, closeY), candleWidth, Math.max(1, Math.abs(closeY - openY)));
+        if (bar.provisional) {
+          ctx.setLineDash([2, 2]); ctx.strokeStyle = "#f4c95d"; ctx.lineWidth = 1;
+          ctx.strokeRect(x - candleWidth / 2 - 2, Math.min(openY, closeY) - 2, candleWidth + 4, Math.max(5, Math.abs(closeY - openY) + 4));
+        }
+        ctx.restore();
       });
 
       maDefinitions.forEach((definition) => {
@@ -216,13 +243,13 @@ export function PaperKlineChart({ account }: { account: PaperAccountView }) {
   const maxStart = Math.max(0, bars.length - safeVisibleCount);
 
   return <section className="paper-kline-card">
-    <header><div><span>TICKFLOW DAILY KLINE</span><b>{account.stockName}日K与模拟成交</b></div><div className="paper-kline-legend"><em className="paper-candle-up" />上涨<em className="paper-candle-down" />下跌<i className="paper-buy-dot">B</i>买入<i className="paper-sell-dot">S</i>卖出<strong>首买 B</strong></div></header>
+    <header><div><span>TICKFLOW DAILY KLINE</span><b>{account.stockName}日K与模拟成交</b></div><div className="paper-kline-legend"><em className="paper-candle-up" />上涨<em className="paper-candle-down" />下跌<i className="paper-buy-dot">B</i>买入<i className="paper-sell-dot">S</i>卖出<strong>首买 B</strong>{bars.at(-1)?.provisional && <mark>当日临时K</mark>}</div></header>
     <div className="paper-kline-toolbar"><div>{maDefinitions.map((definition) => <span key={definition.period} style={{ color: definition.color }}><i style={{ background: definition.color }} />{definition.label}</span>)}</div><div><button disabled={safeVisibleCount >= bars.length} onClick={() => applyZoom(safeVisibleCount * 1.25)}>−</button><button disabled={safeVisibleCount <= Math.min(30, bars.length)} onClick={() => applyZoom(safeVisibleCount * .8)}>＋</button><button disabled={firstBuyIndex == null} onClick={focusFirstBuy}>首买</button><button onClick={() => { setEndOffset(0); setHover(null); }}>最新</button></div></div>
     <div className={`paper-kline-stage ${dragging ? "dragging" : ""}`}>
       <canvas ref={canvasRef} tabIndex={0} aria-label={`${account.stockName}日K蜡烛图，包含模拟买卖点和第一次买入标记；可拖动、滚轮缩放或使用左右方向键查看`} onBlur={() => setHover(null)} onFocus={(event) => { if (visibleBars.length) setHover(hoverFor(visibleEnd - 1, event.currentTarget.getBoundingClientRect().width)); }} onKeyDown={onKeyDown} onPointerCancel={onPointerUp} onPointerDown={onPointerDown} onPointerLeave={() => { if (!dragRef.current) setHover(null); }} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onWheel={onWheel} />
-      {activeBar && hover && <div className={`paper-kline-tooltip ${hover.alignLeft ? "align-left" : ""}`} style={{ left: hover.x }} role="status"><time>{fullDateFormatter.format(activeBar.timestamp)}</time><b>开 {activeBar.open.toFixed(2)} / 高 {activeBar.high.toFixed(2)} / 低 {activeBar.low.toFixed(2)} / 收 {activeBar.close.toFixed(2)}</b>{activeTrades.map((trade) => <span className={trade.action} key={trade.id}>{trade.firstBuy ? "首买" : trade.action === "buy" ? "买入" : "卖出"} {trade.shares.toLocaleString("zh-CN")} 股 · ¥{trade.executionPrice.toFixed(3)}</span>)}</div>}
+      {activeBar && hover && <div className={`paper-kline-tooltip ${hover.alignLeft ? "align-left" : ""}`} style={{ left: hover.x }} role="status"><time>{fullDateFormatter.format(activeBar.timestamp)}{activeBar.provisional ? " · 当日临时 K（盘中更新）" : ""}</time><b>开 {activeBar.open.toFixed(2)} / 高 {activeBar.high.toFixed(2)} / 低 {activeBar.low.toFixed(2)} / 收 {activeBar.close.toFixed(2)}</b>{activeTrades.map((trade) => <span className={trade.action} key={trade.id}>{trade.firstBuy ? "首买" : trade.action === "buy" ? "买入" : "卖出"} {trade.shares.toLocaleString("zh-CN")} 股 · ¥{trade.executionPrice.toFixed(3)}</span>)}</div>}
     </div>
-    <div className="paper-kline-navigator"><span>{visibleBars[0] ? fullDateFormatter.format(visibleBars[0].timestamp) : "—"}</span><input type="range" min="0" max={maxStart} value={Math.min(visibleStart, maxStart)} disabled={!maxStart} aria-label="拖动浏览模拟盘历史K线" onChange={(event) => setEndOffset(Math.max(0, bars.length - Number(event.target.value) - safeVisibleCount))} /><span>{visibleBars.at(-1) ? fullDateFormatter.format(visibleBars.at(-1)!.timestamp) : "—"}</span><small>{markers.length ? `${markers.length} 个成交点` : "暂无成交点"}</small></div>
+    <div className="paper-kline-navigator"><span>{visibleBars[0] ? fullDateFormatter.format(visibleBars[0].timestamp) : "—"}</span><input type="range" min="0" max={maxStart} value={Math.min(visibleStart, maxStart)} disabled={!maxStart} aria-label="拖动浏览模拟盘历史K线" onChange={(event) => setEndOffset(Math.max(0, bars.length - Number(event.target.value) - safeVisibleCount))} /><span>{visibleBars.at(-1) ? fullDateFormatter.format(visibleBars.at(-1)!.timestamp) : "—"}</span><small>{markers.length ? `${markers.length} 个成交点` : "暂无成交点"}{bars.at(-1)?.provisional ? " · 当日 K 盘中更新" : ""}</small></div>
     {error && <p>{error}</p>}
   </section>;
 }

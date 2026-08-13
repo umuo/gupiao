@@ -1453,6 +1453,7 @@ input[type="range"] {
 .paper-buy-dot { background: var(--red); }
 .paper-sell-dot { background: var(--green); }
 .paper-kline-legend > strong { background: #f4c95d; border-radius: 7px; color: #191406; font-family: var(--font-geist-mono), monospace; font-size: 6px; margin-left: 4px; padding: 3px 5px; }
+.paper-kline-legend > mark { background: rgba(244, 201, 93, .1); border: 1px dashed rgba(244, 201, 93, .65); border-radius: 5px; color: #e7c863; font-family: var(--font-geist-mono), monospace; font-size: 6px; margin-left: 4px; padding: 3px 5px; }
 .paper-kline-toolbar { align-items: center; border-bottom: 1px solid #1c2737; display: flex; justify-content: space-between; margin-top: 9px; padding-bottom: 7px; }
 .paper-kline-toolbar > div { align-items: center; display: flex; gap: 7px; }
 .paper-kline-toolbar > div:first-child span { align-items: center; display: flex; font-family: var(--font-geist-mono), monospace; font-size: 7px; gap: 4px; }
