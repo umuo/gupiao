@@ -46,6 +46,7 @@ export type PaperAccountView = {
     symbol: string;
     stockName: string;
     shares: number;
+    entryPrice: number;
     averageCost: number;
     lastPrice: number;
     openedAt: string;

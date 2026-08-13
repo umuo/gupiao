@@ -67,6 +67,7 @@ async function accountViews(userId: string, options: { page?: number; pageSize?:
     const task = tasks.find((item) => item.paperAccountId === account.id) ?? null;
     const taskMappings = task ? mappings.filter((item) => item.automationId === task.id) : [];
     const marketPrice = account.lastPrice ?? position?.lastPrice ?? position?.averageCost ?? 0;
+    const entryTrade = position ? accountTrades.find((item) => item.action === "buy" && item.executedAt === position.openedAt) : null;
     const marketValue = position ? position.shares * marketPrice : 0;
     const unrealizedPnl = position ? marketValue - position.shares * position.averageCost : 0;
     const equity = account.cash + marketValue;
@@ -78,7 +79,7 @@ async function accountViews(userId: string, options: { page?: number; pageSize?:
       ...account,
       strategyDefinition: JSON.parse(account.strategyDefinition),
       strategies: snapshotsFor(account),
-      position,
+      position: position ? { ...position, entryPrice: entryTrade?.executionPrice ?? position.averageCost, lastPrice: marketPrice } : null,
       trades: options.id ? accountTrades : accountTrades.slice(0, 30),
       firstBuyTrade: firstBuysByAccount[accountIndex]?.[0] ?? null,
       tradeCount: countByAccount.get(account.id) ?? 0,

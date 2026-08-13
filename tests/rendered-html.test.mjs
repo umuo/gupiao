@@ -144,6 +144,8 @@ test("persists paper accounts and keeps simulated execution independent from not
   assert.match(accountRoute, /options\.id \? 1_000 : 30/);
   assert.match(accountRoute, /url\.searchParams\.get\("id"\)/);
   assert.match(refreshRoute, /fetchTickFlowKlines/);
+  assert.match(refreshRoute, /fetchTickFlowQuote/);
+  assert.match(refreshRoute, /decryptSecret/);
   assert.match(service, /executePaperSignal/);
   assert.match(service, /paperPositionSellEligibility/);
   assert.match(service, /db\.batch/);
@@ -153,6 +155,8 @@ test("persists paper accounts and keeps simulated execution independent from not
   assert.ok(runner.indexOf("executePaperSignal") < runner.indexOf("deliverNotification(channel"));
   assert.doesNotMatch(runner, /所有通知渠道均投递失败/);
   assert.match(center, /更新今日收益/);
+  assert.match(center, /模拟成交价/);
+  assert.match(center, /含费持仓成本/);
   assert.match(center, /配置定时任务/);
   assert.match(center, /悬停 \/ 触摸查看具体值/);
   assert.match(center, /onPointerMove/);

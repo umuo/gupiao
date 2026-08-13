@@ -1507,7 +1507,7 @@ input[type="range"] {
 .paper-task-card > small { color: #617087; display: block; font-size: 7px; line-height: 1.5; }
 .paper-task-card > button { background: transparent; border: 0; color: #79a9ee; cursor: pointer; font-size: 8px; margin-top: 14px; padding: 0; }
 .paper-position-card, .paper-trades-card { margin-bottom: 10px; padding: 12px; }
-.paper-position-row { align-items: center; display: grid; gap: 16px; grid-template-columns: 1.1fr repeat(3, 1fr); margin-top: 12px; }
+.paper-position-row { align-items: center; display: grid; gap: 16px; grid-template-columns: 1.15fr repeat(5, minmax(0, 1fr)); margin-top: 12px; }
 .paper-position-row > span b, .paper-position-row > span small { display: block; }
 .paper-position-row > span b { color: #aab7c8; font-size: 9px; margin-top: 3px; }
 .paper-position-row > span small { color: #607087; font-size: 7px; }

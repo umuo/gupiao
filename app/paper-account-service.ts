@@ -3,6 +3,7 @@ import { getDb } from "../db";
 import { paperAccounts, paperEquitySnapshots, paperPositions, paperTrades } from "../db/schema";
 import { calculatePaperBuyOrder } from "./paper-execution";
 import { paperPositionSellEligibility } from "./paper-trading-rules";
+import { shouldApplyPaperValuation } from "./paper-valuation";
 import type { SignalStrategy } from "./strategy-engine";
 import { parseStrategySnapshots } from "./strategy-version";
 import { appDateKey } from "./timezone";
@@ -47,6 +48,10 @@ export async function refreshPaperAccountValuation(accountId: string, userId: st
   if (!Number.isFinite(price) || price <= 0) throw new Error("行情价格无效");
   const state = await paperAccountState(accountId, userId);
   if (!state) throw new Error("模拟盘不存在");
+  if (!shouldApplyPaperValuation(state.account.lastValuationDate, date)) {
+    const retainedPrice = state.account.lastPrice ?? state.position?.lastPrice ?? price;
+    return valuation(state.account, state.position, retainedPrice);
+  }
   const now = new Date().toISOString();
   const values = valuation(state.account, state.position, price);
   const db = getDb();
