@@ -58,8 +58,20 @@ export type PaperAccountView = {
     commission: number;
     realizedPnl: number;
     reason: string;
+    barTimestamp: number;
     executedAt: string;
   }>;
+  firstBuyTrade: null | {
+    id: string;
+    action: "buy";
+    shares: number;
+    executionPrice: number;
+    commission: number;
+    realizedPnl: number;
+    reason: string;
+    barTimestamp: number;
+    executedAt: string;
+  };
   tradeCount: number;
   snapshots: Array<{
     id: string;

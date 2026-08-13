@@ -116,10 +116,11 @@ test("keeps TickFlow credentials protected and persists notification state", asy
 });
 
 test("persists paper accounts and keeps simulated execution independent from notification delivery", async () => {
-  const [schema, migration, center, accountRoute, refreshRoute, service, runner, tasks, page] = await Promise.all([
+  const [schema, migration, center, klineChart, accountRoute, refreshRoute, service, runner, tasks, page] = await Promise.all([
     read("db/schema.ts"),
     read("drizzle/0006_nostalgic_franklin_storm.sql"),
     read("app/paper-account-center.tsx"),
+    read("app/paper-kline-chart.tsx"),
     read("app/api/paper-accounts/route.ts"),
     read("app/api/paper-accounts/refresh/route.ts"),
     read("app/paper-account-service.ts"),
@@ -139,6 +140,9 @@ test("persists paper accounts and keeps simulated execution independent from not
   assert.match(accountRoute, /export async function POST/);
   assert.match(accountRoute, /export async function PATCH/);
   assert.match(accountRoute, /export async function DELETE/);
+  assert.match(accountRoute, /firstBuyTrade/);
+  assert.match(accountRoute, /options\.id \? 1_000 : 30/);
+  assert.match(accountRoute, /url\.searchParams\.get\("id"\)/);
   assert.match(refreshRoute, /fetchTickFlowKlines/);
   assert.match(service, /executePaperSignal/);
   assert.match(service, /paperPositionSellEligibility/);
@@ -153,6 +157,11 @@ test("persists paper accounts and keeps simulated execution independent from not
   assert.match(center, /悬停 \/ 触摸查看具体值/);
   assert.match(center, /onPointerMove/);
   assert.match(center, /左右方向键/);
+  assert.match(center, /PaperKlineChart/);
+  assert.match(klineChart, /count=10000/);
+  assert.match(klineChart, /首买 B/);
+  assert.match(klineChart, /mapPaperTradesToBars/);
+  assert.match(klineChart, /拖动浏览模拟盘历史K线/);
   assert.match(tasks, /targetAccount/);
   assert.match(tasks, /关联模拟盘/);
   assert.match(page, /我的模拟盘/);

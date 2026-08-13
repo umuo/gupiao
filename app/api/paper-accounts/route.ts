@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { automationNotificationChannels, automationRuns, automations, notificationChannels, paperAccounts, paperEquitySnapshots, paperPositions, paperTrades } from "../../../db/schema";
 import { getAppUser } from "../../auth";
@@ -45,9 +45,12 @@ async function accountViews(userId: string, options: { page?: number; pageSize?:
   const accounts = await db.select().from(paperAccounts).where(accountWhere).orderBy(desc(paperAccounts.createdAt)).limit(options.id ? 1 : pageSize).offset(options.id ? 0 : (page - 1) * pageSize);
   if (!accounts.length) return { accounts: [], pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) } };
   const accountIds = accounts.map((item) => item.id);
-  const [positions, tradesByAccount, snapshotsByAccount, tradeCounts, tasks, channels] = await Promise.all([
+  const [positions, tradesByAccount, firstBuysByAccount, snapshotsByAccount, tradeCounts, tasks, channels] = await Promise.all([
     db.select().from(paperPositions).where(and(eq(paperPositions.userId, userId), inArray(paperPositions.paperAccountId, accountIds))),
-    Promise.all(accountIds.map((paperAccountId) => db.select().from(paperTrades).where(and(eq(paperTrades.userId, userId), eq(paperTrades.paperAccountId, paperAccountId))).orderBy(desc(paperTrades.executedAt)).limit(30))),
+    Promise.all(accountIds.map((paperAccountId) => db.select().from(paperTrades).where(and(eq(paperTrades.userId, userId), eq(paperTrades.paperAccountId, paperAccountId))).orderBy(desc(paperTrades.executedAt)).limit(options.id ? 1_000 : 30))),
+    options.id
+      ? Promise.all(accountIds.map((paperAccountId) => db.select().from(paperTrades).where(and(eq(paperTrades.userId, userId), eq(paperTrades.paperAccountId, paperAccountId), eq(paperTrades.action, "buy"))).orderBy(asc(paperTrades.executedAt)).limit(1)))
+      : Promise.resolve(accountIds.map(() => [])),
     Promise.all(accountIds.map((paperAccountId) => db.select().from(paperEquitySnapshots).where(and(eq(paperEquitySnapshots.userId, userId), eq(paperEquitySnapshots.paperAccountId, paperAccountId))).orderBy(desc(paperEquitySnapshots.snapshotDate)).limit(60))),
     db.select({ paperAccountId: paperTrades.paperAccountId, total: count() }).from(paperTrades).where(and(eq(paperTrades.userId, userId), inArray(paperTrades.paperAccountId, accountIds))).groupBy(paperTrades.paperAccountId),
     db.select().from(automations).where(and(eq(automations.userId, userId), inArray(automations.paperAccountId, accountIds))),
@@ -76,7 +79,8 @@ async function accountViews(userId: string, options: { page?: number; pageSize?:
       strategyDefinition: JSON.parse(account.strategyDefinition),
       strategies: snapshotsFor(account),
       position,
-      trades: accountTrades.slice(0, 30),
+      trades: options.id ? accountTrades : accountTrades.slice(0, 30),
+      firstBuyTrade: firstBuysByAccount[accountIndex]?.[0] ?? null,
       tradeCount: countByAccount.get(account.id) ?? 0,
       snapshots: accountSnapshots,
       metrics: { equity, marketValue, unrealizedPnl, realizedPnl: account.realizedPnl, totalReturn, dailyReturn },
@@ -105,7 +109,8 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const page = Number(url.searchParams.get("page") ?? 1) || 1;
   const pageSize = Number(url.searchParams.get("pageSize") ?? DEFAULT_PAGE_SIZE) || DEFAULT_PAGE_SIZE;
-  return Response.json(await accountViews(user.userId, { page, pageSize }));
+  const id = String(url.searchParams.get("id") ?? "").trim().slice(0, 100);
+  return Response.json(await accountViews(user.userId, id ? { id } : { page, pageSize }));
 }
 
 export async function POST(request: Request) {
