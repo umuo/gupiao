@@ -28,6 +28,12 @@ export function tradeNotificationDetails(action: "buy" | "sell", execution: Trad
   return { shares: null, quantityText: "未执行成交（仅策略信号）", actionText: `${actionLabel}信号（未执行成交）`, tradeSummary: `${actionLabel}：未执行成交（仅策略信号）` };
 }
 
+export function tradeNotificationExecutionStatus(execution: TradeNotificationExecution) {
+  if (!execution) return "signal-only" as const;
+  if (execution.executed || execution.duplicate) return "executed" as const;
+  return "rejected" as const;
+}
+
 export const defaultMessageTemplate = `{
   "event": "strategy.{{action}}",
   "action": "{{actionText}}",

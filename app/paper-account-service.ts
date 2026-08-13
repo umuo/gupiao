@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { paperAccounts, paperEquitySnapshots, paperPositions, paperTrades } from "../db/schema";
 import { calculatePaperBuyOrder } from "./paper-execution";
+import { paperPositionSellEligibility } from "./paper-trading-rules";
 import type { SignalStrategy } from "./strategy-engine";
 import { parseStrategySnapshots } from "./strategy-version";
 import { appDateKey } from "./timezone";
@@ -131,7 +132,8 @@ export async function executePaperSignal(input: {
   }
 
   const account = state.account;
-  const now = new Date().toISOString();
+  const tradeTime = new Date();
+  const now = tradeTime.toISOString();
   const snapshotDate = shanghaiDate(new Date(input.barTimestamp));
   const db = getDb();
   if (input.action === "buy") {
@@ -160,6 +162,8 @@ export async function executePaperSignal(input: {
 
   if (!state.position) return { executed: false, action: input.action, reason: "模拟盘当前没有可卖出的持仓" };
   const position = state.position;
+  const sellEligibility = paperPositionSellEligibility(position.openedAt, tradeTime);
+  if (!sellEligibility.allowed) return { executed: false, action: input.action, reason: sellEligibility.reason };
   const executionPrice = input.signalPrice * (1 - account.slippageRate);
   const grossAmount = position.shares * executionPrice;
   const commission = Math.max(5, grossAmount * account.commissionRate);

@@ -3,7 +3,8 @@ import { getDb } from "../db";
 import { automationNotificationChannels, automationRuns, automations, notificationChannels, notificationLogs, userSettings } from "../db/schema";
 import { deliverNotification } from "./notification-delivery";
 import { notificationSignalKeyAfterDelivery, repeatedNotificationAlreadySent, skipRepeatedSignalBeforeExecution } from "./automation-outcome";
-import { tradeNotificationDetails } from "./notification-model";
+import { tradeNotificationDetails, tradeNotificationExecutionStatus } from "./notification-model";
+import { paperTradeExecutionKey } from "./paper-trading-rules";
 import { decryptSecret } from "./secret-box";
 import { executePaperSignal, paperAccountState, paperStrategiesFrom, refreshPaperAccountValuation, shanghaiDate } from "./paper-account-service";
 import { combinedSignalFor } from "./strategy-combination";
@@ -133,7 +134,7 @@ async function writeLog(row: AutomationRow, input: {
   });
 }
 
-export async function runAutomation(row: AutomationRow) {
+export async function runAutomation(row: AutomationRow, automationRunId: string) {
   const now = new Date();
   const clock = shanghaiClock(now);
   const paperState = row.paperAccountId ? await paperAccountState(row.paperAccountId, row.userId) : null;
@@ -216,7 +217,7 @@ export async function runAutomation(row: AutomationRow) {
     signalPrice: bar.close,
     reason,
     barTimestamp: bar.timestamp,
-    signalKey: `${row.id}:${signalKey}`,
+    signalKey: paperTradeExecutionKey(row.id, automationRunId, action),
   }) : null;
   const executionWarning = execution && !execution.executed && !execution.duplicate
     ? `检测到${action === "buy" ? "买入" : "卖出"}信号，但模拟成交未执行：${execution.reason}`
@@ -271,7 +272,7 @@ export async function runAutomation(row: AutomationRow) {
     paperAccountName: paperState?.account.name ?? null,
     reason: outcomeReason,
     signalReason: reason,
-    executionStatus: executionWarning ? "rejected" : execution?.executed ? "executed" : "signal-only",
+    executionStatus: tradeNotificationExecutionStatus(execution),
     executionReason: execution?.reason ?? null,
     dataMode: row.dataMode,
     source,
@@ -406,7 +407,7 @@ async function processAutomationRun(run: AutomationRunRow): Promise<ProcessedAut
 
   try {
     const latestRow = leased;
-    const result = await runAutomation(latestRow);
+    const result = await runAutomation(latestRow, claimed.id);
     const deliveries = result.deliveries ?? { total: 0, succeeded: 0, failed: 0 };
     const completedAt = new Date().toISOString();
     const [completed] = await db.update(automationRuns).set({
